@@ -34,6 +34,9 @@
 (defun chop (size integer)
   (ldb (byte size 0) integer))
 
+(defun cat-bytes (high-order low-order)
+  (dpb high-order (byte 8 8) low-order))
+
 (defun +_8 (x y)
   (let ((result (+ x y)))
     (values (chop 8 result)
@@ -44,16 +47,11 @@
     (values (chop 8 result)
             (if (> x y) 1 0))))
 
-
 (defmacro macro-map ((lambda-list items) &rest body)
   (with-gensyms (macro)
     `(macrolet ((,macro ,(ensure-list lambda-list) ,@body))
       ,@(iterate (for item :in items)
                  (collect `(,macro ,@(ensure-list item)))))))
-
-
-(defun cat-bytes (high-order low-order)
-  (dpb high-order (byte 8 8) low-order))
 
 
 ;;;; Data ---------------------------------------------------------------------
@@ -95,7 +93,6 @@
                   :displaced-to video-raw
                   :element-type 'fixnum)))
     (make-chip% :video-raw video-raw :video video)))
-
 
 (define-with-macro chip
   memory registers
@@ -169,8 +166,11 @@
   (fill video-raw 0)
   (setf video-dirty t))
 
-(define-opcode op-jp (_ (target 3))                     ;; JP addr
+(define-opcode op-jp-imm (_ (target 3))                 ;; JP addr
   (setf program-counter target))
+
+(define-opcode op-jp-imm+reg (_ (target 3))             ;; JP V_0 + addr
+  (setf program-counter (+ target (register 0))))
 
 (define-opcode op-call (_ (target 3))                   ;; CALL addr
   (vector-push program-counter stack)
@@ -263,7 +263,7 @@
       (#x0 (ecase instruction
              (#x00E0 (call op-cls))
              (#x00EE (call op-ret))))
-      (#x1 (call op-jp))
+      (#x1 (call op-jp-imm))
       (#x2 (call op-call))
       (#x3 (call op-se-reg-imm))
       (#x4 (call op-sne-reg-imm))
@@ -272,19 +272,19 @@
       (#x6 (call op-ld-reg<imm))
       (#x7 (call op-add-reg<imm))
       (#x8 (ecase (logand #x000F instruction)
-             (#x0)
-             (#x1)
-             (#x2)
-             (#x3)
-             (#x4)
-             (#x5)
+             (#x0 (call op-ld-reg<reg))
+             (#x1 (call op-or))
+             (#x2 (call op-and))
+             (#x3 (call op-xor))
+             (#x4 (call op-add-reg<reg))
+             (#x5 (call op-sub-reg<reg))
              (#x6)
-             (#x7)
+             (#x7 (call op-subn-reg<reg))
              (#xE)))
       (#x9 (ecase (logand #x000F instruction)
-             (#x0)))
+             (#x0 (call op-sne-reg-reg))))
       (#xA (call op-ld-i<imm))
-      (#xB)
+      (#xB (call op-jp-imm+reg))
       (#xC (call op-rnd))
       (#xD)
       (#xE (ecase (logand #x00FF instruction)

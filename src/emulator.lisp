@@ -19,7 +19,7 @@
 
 
 ;;;; Utils --------------------------------------------------------------------
-(declaim (inline nibble not= +_8 -_8))
+(declaim (inline not= +_8 -_8 chop cat-bytes))
 
 (defun make-simple-array (element-type size &rest args)
   (apply #'make-array size
@@ -28,20 +28,20 @@
          :element-type element-type
          args))
 
-(defun nibble (position integer)
-  (ldb (byte 4 (* position 4)) integer))
-
 (defun not= (x y)
   (not (= x y)))
 
+(defun chop (size integer)
+  (ldb (byte size 0) integer))
+
 (defun +_8 (x y)
   (let ((result (+ x y)))
-    (values (ldb (byte 8 0) result)
+    (values (chop 8 result)
             (if (> result 255) 1 0))))
 
 (defun -_8 (x y)
   (let ((result (- x y)))
-    (values (ldb (byte 8 0) result)
+    (values (chop 8 result)
             (if (> x y) 1 0))))
 
 
@@ -52,21 +52,30 @@
                  (collect `(,macro ,@(ensure-list item)))))))
 
 
+(defun cat-bytes (high-order low-order)
+  (dpb high-order (byte 8 8) low-order))
+
+
 ;;;; Data ---------------------------------------------------------------------
-(defstruct chip
+(defstruct (chip (:constructor make-chip%))
   (memory (make-simple-array 'int8 4096)
           :type (basic-array int8 4096)
           :read-only t)
   (registers (make-simple-array 'int8 16)
              :type (basic-array int8 16)
              :read-only t)
-  (video (make-simple-array 'fixnum #.(* 64 32))
-         :type (basic-array fixnum #.(* 64 32))
-         :read-only t)
-  (video-dirty t :type boolean)
   (keys (make-simple-array 'boolean 16)
         :type (basic-array boolean 16)
         :read-only t)
+  (awaiting-key nil
+                :type (or null (integer 0 15)))
+  (video-raw (error "Required")
+             :type (basic-array fixnum #.(* 32 64))
+             :read-only t)
+  (video (error "Required")
+         :type (array fixnum (32 64)) ; row major :\
+         :read-only t)
+  (video-dirty t :type boolean)
   (index 0 :type int16)
   (program-counter 0 :type int12)
   (delay-timer 0 :type int8)
@@ -80,28 +89,55 @@
            :element-type 'int12)
          :type (stack 16)))
 
+(defun make-chip ()
+  (let* ((video-raw (make-simple-array 'fixnum (* 32 64)))
+         (video (make-array '(32 64)
+                  :displaced-to video-raw
+                  :element-type 'fixnum)))
+    (make-chip% :video-raw video-raw :video video)))
+
+
 (define-with-macro chip
-  memory registers video keys
+  memory registers
   index program-counter
   delay-timer sound-timer
   random-state
-  video-dirty
+  video video-raw video-dirty
+  keys awaiting-key
   stack)
 
 
+;;;; Graphics -----------------------------------------------------------------
+(defmacro vref (video x y)
+  `(aref ,video ,y ,x))
+
+
+;;;; Keyboard -----------------------------------------------------------------
+(defun keydown (chip key)
+  (with-chip (chip)
+    (setf (aref keys key) t)
+    (when awaiting-key
+      (setf (aref registers awaiting-key) key
+            awaiting-key nil))))
+
+(defun keyup (chip key)
+  (setf (aref (chip-keys chip) key) nil))
+
+
 ;;;; Opcodes ------------------------------------------------------------------
-(defun parse-opcode-argument-bindings (argument-list)
-  (flet ((normalize-arg (arg)
-           (destructuring-bind (symbol &optional (nibbles 1))
-               (ensure-list arg)
-             (list symbol nibbles))))
-    (iterate
-      (for (symbol nibbles) :in (mapcar #'normalize-arg argument-list))
-      (for position :first 3 :then (- position nibbles))
-      (when (not (eql symbol '_))
-        (collect `(,symbol (ldb (byte ,(* nibbles 4)
-                                      ,(* position 4))
-                                opcode)))))))
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defun parse-opcode-argument-bindings (argument-list)
+    (flet ((normalize-arg (arg)
+             (destructuring-bind (symbol &optional (nibbles 1))
+                 (ensure-list arg)
+               (list symbol nibbles))))
+      (iterate
+        (for (symbol nibbles) :in (mapcar #'normalize-arg argument-list))
+        (for position :first 3 :then (- position nibbles))
+        (when (not (eql symbol '_))
+          (collect `(,symbol (ldb (byte ,(* nibbles 4)
+                                        ,(* position 4))
+                                  opcode))))))))
 
 (defmacro define-opcode (name argument-list &body body)
   `(progn
@@ -127,13 +163,11 @@
       (op-ld-dt<reg  (_ r _ _)       delay-timer   (register r))
       (op-ld-st<reg  (_ r _ _)       sound-timer   (register r))))
   `(define-opcode ,name ,arglist
-    (setf ,destination ,source)
-    (incf program-counter 2)))
+    (setf ,destination ,source)))
 
 (define-opcode op-cls ()                                ;; CLS
-  (fill video 0)
-  (setf video-dirty t)
-  (incf program-counter 2))
+  (fill video-raw 0)
+  (setf video-dirty t))
 
 (define-opcode op-jp (_ (target 3))                     ;; JP addr
   (setf program-counter target))
@@ -145,7 +179,7 @@
 (define-opcode op-ret ()                                ;; RET
   (setf program-counter (vector-pop stack)))
 
-(macro-map                                              ;; ADD/SUB
+(macro-map                                              ;; ADD/SUB (8-bit)
     ((name op source-arg source-expr)
      ((op-add-reg<imm +_8 (immediate 2) immediate)
       (op-add-reg<reg +_8 (ry 1) (register ry))
@@ -154,25 +188,26 @@
     (multiple-value-bind (result carry)
         (,op (register rx) ,source-expr)
       (setf (register rx) result
-            (register #xF) carry))
-    (incf program-counter 2)))
+            (register #xF) carry))))
+
+(define-opcode op-add-index<reg (_ r)                   ;; ADD I, Vx (16-bit)
+  (zapf index (chop 16 (+ % (register r)))))
 
 (define-opcode op-subn-reg<reg (_ rx ry)                ;; SUBN
-    (multiple-value-bind (result carry)
-        (-_8 (register ry) (register rx)) ; subtraction order is swapped for SUBN
-      (setf (register rx) result
-            (register #xF) carry))
-    (incf program-counter 2))
+  (multiple-value-bind (result carry)
+      (-_8 (register ry) (register rx)) ; subtraction order is swapped for SUBN
+    (setf (register rx) result
+          (register #xF) carry)))
 
 (macro-map                                              ;; SE/SNE
-    ((name test x-arg y-arg)
-     ((op-se-reg-imm  =    (r 1) (immediate 2))
-      (op-sne-reg-imm not= (r 1) (immediate 2))
-      (op-se-reg-reg  =    (rx 1) (ry 1))
-      (op-sne-reg-reg not= (rx 1) (ry 1))))
+  ((name test x-arg y-arg)
+   ((op-se-reg-imm  =    (r 1) (immediate 2))
+    (op-sne-reg-imm not= (r 1) (immediate 2))
+    (op-se-reg-reg  =    (rx 1) (ry 1))
+    (op-sne-reg-reg not= (rx 1) (ry 1))))
   `(define-opcode ,name (_ ,x-arg ,y-arg)
-    (incf program-counter
-          (if (,test ,(car x-arg) ,(car y-arg)) 4 2))))
+    (when (,test ,(car x-arg) ,(car y-arg))
+      (incf program-counter 2))))
 
 (macro-map                                              ;; AND/OR/XOR
     ((name function)
@@ -181,105 +216,109 @@
       (op-xor logxor)))
   `(define-opcode ,name (_ destination source _)
     (zapf (register destination)
-          (,function % (register source)))
-    (incf program-counter 2)))
+          (,function % (register source)))))
 
 (define-opcode op-rnd (_ r (mask 2))                    ;; RND
   (setf (register r)
-        (logand (random 256 random-state) mask))
-  (incf program-counter 2))
+        (logand (random 256 random-state) mask)))
 
 (define-opcode op-skp (_ r _ _)                         ;; SKP
-  (incf program-counter (if (aref keys (register r)) 4 2)))
+  (when (aref keys (register r))
+    (incf program-counter 2)))
 
 (define-opcode op-sknp (_ r _ _)                        ;; SKNP
-  (incf program-counter (if (not (aref keys (register r))) 4 2)))
+  (when (not (aref keys (register r)))
+    (incf program-counter 2)))
 
 (define-opcode op-ld-mem<regs (_ n _ _)                 ;; LD [I] < V_n
-  (replace memory registers :start1 index :end2 n)
-  (incf program-counter 2))
+  (replace memory registers :start1 index :end2 n))
 
 (define-opcode op-ld-regs<mem (_ n _ _)                 ;; LD V_n < [I]
-  (replace registers memory :end1 n :start2 index)
-  (incf program-counter 2))
+  (replace registers memory :end1 n :start2 index))
+
+(define-opcode op-ld-reg<key (_ r _ _)                  ;; LD Vx, Key (await)
+  (setf awaiting-key r))
 
 
-;;;; Keyboard -----------------------------------------------------------------
-(defun keydown (chip key)
-  (with-chip (chip)
-    (setf (aref keys key) t)))
+(define-opcode op-unknown ((instruction 4))
+  (error "Unknown instruction: #x~4,'0X" instruction))
 
-(defun keyup (chip key)
-  (with-chip (chip)
-    (setf (aref keys key) nil)))
-
-
-;;;; Graphics -----------------------------------------------------------------
 
 ;;;; Main ---------------------------------------------------------------------
+(declaim
+  (ftype (function (chip) null) emulate-cycle)
+  (ftype (function (chip int16) null) dispatch-instruction))
+
+(defparameter *running* t)
+(defparameter *paused* nil)
+(defparameter *c* nil)
+
 (defun load-rom (chip filename)
   (replace (chip-memory chip) (read-file-into-byte-vector filename)
            :start1 #x200))
 
+(defun dispatch-instruction (chip instruction)
+  (macrolet ((call (name) `(,name chip instruction)))
+    (ecase (logand #xF000 instruction)
+      (#x0 (ecase instruction
+             (#x00E0 (call op-cls))
+             (#x00EE (call op-ret))))
+      (#x1 (call op-jp))
+      (#x2 (call op-call))
+      (#x3 (call op-se-reg-imm))
+      (#x4 (call op-sne-reg-imm))
+      (#x5 (ecase (logand #x000F instruction)
+             (#x0 (call op-se-reg-reg))))
+      (#x6 (call op-ld-reg<imm))
+      (#x7 (call op-add-reg<imm))
+      (#x8 (ecase (logand #x000F instruction)
+             (#x0)
+             (#x1)
+             (#x2)
+             (#x3)
+             (#x4)
+             (#x5)
+             (#x6)
+             (#x7)
+             (#xE)))
+      (#x9 (ecase (logand #x000F instruction)
+             (#x0)))
+      (#xA (call op-ld-i<imm))
+      (#xB)
+      (#xC (call op-rnd))
+      (#xD)
+      (#xE (ecase (logand #x00FF instruction)
+             (#x9E (call op-skp))
+             (#xA1 (call op-sknp))))
+      (#xF (ecase (logand #x00FF instruction)
+             (#x07 (call op-ld-reg<dt))
+             (#x0A (call op-ld-reg<key))
+             (#x15 (call op-ld-dt<reg))
+             (#x18 (call op-ld-st<reg))
+             (#x1E (call op-add-index<reg))
+             (#x29)
+             (#x33)
+             (#x55 (call op-ld-mem<regs))
+             (#x65 (call op-ld-regs<mem)))))))
+
 (defun emulate-cycle (chip)
   (with-chip (chip)
-    (let ((opcode (logior (ash (aref memory program-counter) 8)
-                          (aref memory (1+ program-counter)))))
-      (macrolet ((call (name) `(,name chip opcode)))
-        (case (logand #xF000 opcode)
-          (#x0 (ecase opcode
-                 (#x00E0 (call op-cls))
-                 (#x00EE (call op-ret))))
-          (#x1 (call op-jp))
-          (#x2 (call op-call))
-          (#x3 (call op-se-reg-imm))
-          (#x4 (call op-sne-reg-imm))
-          (#x5 (ecase (logand #x000F opcode)
-                 (#x0 (call op-se-reg-reg))))
-          (#x6 (call op-ld-reg<imm))
-          (#x7 (call op-add-reg<imm))
-          (#x8 (ecase (logand #x000F opcode)
-                 (#x0)
-                 (#x1)
-                 (#x2)
-                 (#x3)
-                 (#x4)
-                 (#x5)
-                 (#x6)
-                 (#x7)
-                 (#xE)))
-          (#x9 (ecase (logand #x000F opcode)
-                 (#x0)))
-          (#xA (call op-ld-i<imm))
-          (#xB)
-          (#xC (call op-rnd))
-          (#xD)
-          (#xE (ecase (logand #x00FF opcode)
-                 (#x9E (call op-skp))
-                 (#xA1 (call op-sknp))))
-          (#xF (ecase (logand #x00FF opcode)
-                 (#x07 (call op-ld-reg<dt))
-                 (#x0A)
-                 (#x15 (call op-ld-dt<reg))
-                 (#x18 (call op-ld-st<reg))
-                 (#x1E)
-                 (#x29)
-                 (#x33)
-                 (#x55 (call op-ld-mem<regs))
-                 (#x65 (call op-ld-regs<mem)))))))))
+    (if awaiting-key
+      (sleep 10/1000)
+      (let ((instruction (cat-bytes (aref memory program-counter)
+                                    (aref memory (1+ program-counter)))))
+        (zapf program-counter (chop 12 (+ % 2)))
+        (dispatch-instruction chip instruction)))))
 
-
-(defun draw-graphics (chip))
-(defun handle-keys (chip))
-
-(defparameter *running* t)
 
 (defun run ()
   (let ((chip (make-chip)))
-    (setf *running* t)
+    (setf *running* t
+          *c* chip)
+    (chip8.gui::run-gui chip)
     ;; init
     ;; load rom
-    (iterate
+    #+no(iterate
       (while *running*)
       (emulate-cycle chip)
       (handle-keys chip)

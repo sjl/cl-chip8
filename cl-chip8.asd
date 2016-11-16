@@ -23,5 +23,5 @@
                              (:file "quickutils")))
                (:file "package")
                (:module "src" :serial t
-                :components (#+no (:module "gui" :serial t :components ((:file "main")))
-                             (:file "emulator")))))
+                :components ((:file "emulator")
+                             (:file "gui")))))

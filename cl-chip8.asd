@@ -24,4 +24,5 @@
                (:file "package")
                (:module "src" :serial t
                 :components ((:file "emulator")
+                             (:file "debugger")
                              (:file "gui")))))

@@ -11,3 +11,7 @@
 (defpackage :chip8.gui
   (:use :cl+qt :iterate :losh
     :chip8.quickutils))
+
+(defpackage :chip8.debugger
+  (:use :cl+qt :iterate :losh :cl-arrows
+    :chip8.quickutils))

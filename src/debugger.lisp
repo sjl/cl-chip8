@@ -62,18 +62,26 @@
                       (t #\space))
                     :result-type 'string)))
 
-(defun dump (array start &optional (offset 0))
+(defun disassemble-instructions (array start)
   (iterate
     (with len = (length array))
     (for i :from start :below len :by 2)
     (for instruction = (chip8::cat-bytes (aref array i)
+                                         ;; ugly hack to handle odd-sized roms
                                          (if (< (1+ i) len)
                                            (aref array (1+ i))
                                            0)))
-    (for disassembly = (disassemble-instruction instruction))
-    (sleep 0.005)
-    (format t "~3,'0X: ~4,'0X ~24A ~8A~%"
-            (+ offset i)
-            instruction
-            (or disassembly "")
-            (bit-diagram instruction))))
+    (collect (list i
+                   instruction
+                   (disassemble-instruction instruction)
+                   (bit-diagram instruction)))))
+
+(defun dump (array start &optional (offset 0))
+  (iterate (for (address instruction disassembly bits)
+                :in (disassemble-instructions array start))
+           (sleep 0.005)
+           (format t "~3,'0X: ~4,'0X ~24A ~8A~%"
+                   (+ address offset)
+                   instruction
+                   (or disassembly "")
+                   bits)))

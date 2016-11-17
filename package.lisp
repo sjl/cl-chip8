@@ -5,8 +5,7 @@
     :iterate
     :cl-arrows
     :chip8.quickutils)
-  (:export)
-  (:shadow :bit))
+  (:export))
 
 
 (defpackage :chip8.gui

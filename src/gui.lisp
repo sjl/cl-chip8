@@ -60,40 +60,43 @@
     (die screen)))
 
 
-(defun render-screen (screen)
-  (with-finalizing ((painter (q+:make-qpainter screen)))
-    (q+:begin-native-painting painter)
+(defun render-screen (screen painter)
+  (q+:begin-native-painting painter)
 
-    (gl:clear-color 0.0 0.0 0.0 1.0)
-    (gl:clear :color-buffer-bit)
+  (gl:clear-color 0.0 0.0 0.0 1.0)
+  (gl:clear :color-buffer-bit)
 
-    (gl:bind-texture :texture-2d (screen-texture screen))
-    (gl:tex-sub-image-2d :texture-2d 0 0 0 64 32 :luminance :unsigned-byte
-                         (chip8::chip-video-raw (screen-chip screen)))
+  (gl:bind-texture :texture-2d (screen-texture screen))
 
-    (let ((tw 1)
-          (th 0.5))
-      (gl:with-primitives :quads
-        (gl:tex-coord 0 0)
-        (gl:vertex 0 0)
+  (let ((chip (screen-chip screen)))
+    (when t ; (chip8::chip-video-dirty chip)
+      (setf (chip8::chip-video-dirty chip) nil)
+      (gl:tex-sub-image-2d :texture-2d 0 0 0 64 32 :luminance :unsigned-byte
+                           (chip8::chip-video chip))))
 
-        (gl:tex-coord tw 0)
-        (gl:vertex *width* 0)
+  (let ((tw 1)
+        (th 0.5))
+    (gl:with-primitives :quads
+      (gl:tex-coord 0 0)
+      (gl:vertex 0 0)
 
-        (gl:tex-coord tw th)
-        (gl:vertex *width* *height*)
+      (gl:tex-coord tw 0)
+      (gl:vertex *width* 0)
 
-        (gl:tex-coord 0 th)
-        (gl:vertex 0 *height*)))
+      (gl:tex-coord tw th)
+      (gl:vertex *width* *height*)
 
-    (gl:bind-texture :texture-2d 0)
+      (gl:tex-coord 0 th)
+      (gl:vertex 0 *height*)))
 
-    (q+:end-native-painting painter)))
+  (gl:bind-texture :texture-2d 0)
 
-(defun render-debug (screen)
+  (q+:end-native-painting painter))
+
+(defun render-debug (screen painter)
+  (declare (ignore screen))
   (when chip8::*paused*
-    (with-finalizing* ((painter (q+:make-qpainter screen))
-                       (font (q+:make-qfont "Menlo" 40))
+    (with-finalizing* ((font (q+:make-qfont "Menlo" 40))
                        (border-color (q+:make-qcolor 255 255 255))
                        (fill-color (q+:make-qcolor 0 0 0))
                        (path (q+:make-qpainterpath))
@@ -114,8 +117,9 @@
 
 (define-override (screen paint-event) (ev)
   (declare (ignore ev))
-  (render-screen screen)
-  (render-debug screen))
+  (with-finalizing ((painter (q+:make-qpainter screen)))
+    (render-screen screen painter)
+    (render-debug screen painter)))
 
 
 (defun pad-key-for (code)

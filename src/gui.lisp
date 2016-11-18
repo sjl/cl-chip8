@@ -4,7 +4,7 @@
 
 ;;;; Config -------------------------------------------------------------------
 (defparameter *current* nil)
-(defparameter *scale* 6)
+(defparameter *scale* 8)
 (defparameter *width* (* *scale* 64))
 (defparameter *height* (* *scale* 32))
 (defparameter *fps* 60)
@@ -94,26 +94,25 @@
   (q+:end-native-painting painter))
 
 (defun render-debug (screen painter)
-  (declare (ignore screen))
-  (when chip8::*paused*
-    (with-finalizing* ((font (q+:make-qfont "Menlo" 40))
-                       (border-color (q+:make-qcolor 255 255 255))
-                       (fill-color (q+:make-qcolor 0 0 0))
-                       (path (q+:make-qpainterpath))
-                       (pen (q+:make-qpen))
-                       (brush (q+:make-qbrush fill-color)))
-      (setf (q+:width pen) 1)
-      (setf (q+:color pen) border-color)
+  (when (-> screen screen-chip chip8::chip-debugger chip8::debugger-paused)
+         (with-finalizing* ((font (q+:make-qfont "Menlo" 20))
+                            (border-color (q+:make-qcolor 255 255 255))
+                            (fill-color (q+:make-qcolor 0 0 0))
+                            (path (q+:make-qpainterpath))
+                            (pen (q+:make-qpen))
+                            (brush (q+:make-qbrush fill-color)))
+           (setf (q+:width pen) 1)
+           (setf (q+:color pen) border-color)
 
-      (setf (q+:pen painter) pen)
-      (setf (q+:brush painter) brush)
-      (setf (q+:font painter) font)
-      (setf (q+:weight font) (q+:qfont.black))
-      (setf (q+:style-hint font) (q+:qfont.type-writer))
+           (setf (q+:pen painter) pen)
+           (setf (q+:brush painter) brush)
+           (setf (q+:font painter) font)
+           (setf (q+:weight font) (q+:qfont.black))
+           (setf (q+:style-hint font) (q+:qfont.type-writer))
 
-      ; (setf (q+:pen painter) (q+:make-qcolor "#ff0000"))
-      (q+:add-text path 10 40 font "PAUSED")
-      (q+:draw-path painter path))))
+           ; (setf (q+:pen painter) (q+:make-qcolor "#ff0000"))
+           (q+:add-text path 10 20 font "PAUSED")
+           (q+:draw-path painter path))))
 
 (define-override (screen paint-event) (ev)
   (declare (ignore ev))
@@ -158,11 +157,15 @@
     (if pad-key
       (when pad-key
         (chip8::keyup chip pad-key))
-      (cond ((= key (q+:qt.key_escape))
-             (die screen))
+      (qtenumcase key
+        ((q+:qt.key_escape)
+         (die screen))
 
-            ((= key (q+:qt.key_space))
-             (zapf chip8::*paused* (not %))))))
+        ((q+:qt.key_space)
+         (-> chip chip8::chip-debugger chip8::debugger-toggle-pause))
+
+        ((q+:qt.key_f7)
+         (-> chip chip8::chip-debugger chip8::debugger-step)))))
   (stop-overriding))
 
 

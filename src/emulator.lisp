@@ -74,6 +74,11 @@
 
 
 ;;;; Data ---------------------------------------------------------------------
+(defstruct debugger
+  (paused nil :type boolean)
+  (take-step nil :type boolean)
+  (print-needed nil :type boolean))
+
 (defstruct chip
   (memory (make-simple-array 'int8 4096)
           :type (basic-array int8 4096)
@@ -103,7 +108,8 @@
            :adjustable nil
            :fill-pointer 0
            :element-type 'int12)
-         :type (stack 16)))
+         :type (stack 16))
+  (debugger (make-debugger) :type debugger :read-only t))
 
 (define-with-macro chip
   memory registers
@@ -113,7 +119,11 @@
   random-state
   video video-dirty
   keys awaiting-key
-  stack)
+  stack
+  debugger)
+
+(define-with-macro debugger
+  paused take-step print-needed)
 
 (declaim (inline chip-flag (setf chip-flag)))
 
@@ -122,6 +132,147 @@
 
 (defun (setf chip-flag) (new-value chip)
   (setf (aref (chip-registers chip) #xF) new-value))
+
+
+;;;; Disassembler -------------------------------------------------------------
+(defun disassemble-instruction (instruction)
+  (let ((_x__ (ldb (byte 4 8) instruction))
+        (__x_ (ldb (byte 4 4) instruction))
+        (___x (ldb (byte 4 0) instruction))
+        (__xx (ldb (byte 8 0) instruction))
+        (_xxx (ldb (byte 12 0) instruction)))
+    (case (logand #xF000 instruction)
+      (#x0000 (case instruction
+                (#x00E0 '(cls))
+                (#x00EE '(ret))))
+      (#x1000 `(jp ,_xxx))
+      (#x2000 `(call ,_xxx))
+      (#x3000 `(se (v ,_x__) ,__xx))
+      (#x4000 `(sne (v ,_x__) ,__xx))
+      (#x5000 (case (logand #x000F instruction)
+                (#x0 `(se (v ,_x__) (v ,__x_)))))
+      (#x6000 `(ld (v ,_x__) ,__xx))
+      (#x7000 `(add (v ,_x__) ,__xx))
+      (#x8000 (case (logand #x000F instruction)
+                (#x0 `(ld (v ,_x__) (v ,__x_)))
+                (#x1 `(or (v ,_x__) (v ,__x_)))
+                (#x2 `(and (v ,_x__) (v ,__x_)))
+                (#x3 `(xor (v ,_x__) (v ,__x_)))
+                (#x4 `(add (v ,_x__) (v ,__x_)))
+                (#x5 `(sub (v ,_x__) (v ,__x_)))
+                (#x6 `(shr (v ,_x__) (v ,__x_)))
+                (#x7 `(subn (v ,_x__) (v ,__x_)))
+                (#xE `(shl (v ,_x__) (v ,__x_)))))
+      (#x9000 (case (logand #x000F instruction)
+                (#x0 `(sne (v ,_x__) (v ,__x_)))))
+      (#xA000 `(ld i ,_xxx))
+      (#xB000 `(jp (v 0) ,_xxx))
+      (#xC000 `(rnd (v ,_x__) ,__xx))
+      (#xD000 `(drw (v ,_x__) (v ,__x_) ,___x))
+      (#xE000 (case (logand #x00FF instruction)
+                (#x9E `(skp (v ,_x__)))
+                (#xA1 `(sknp (v ,_x__)))))
+      (#xF000 (case (logand #x00FF instruction)
+                (#x07 `(ld (v ,_x__) dt))
+                (#x0A `(ld (v ,_x__) k))
+                (#x15 `(ld dt (v ,_x__)))
+                (#x18 `(ld st (v ,_x__)))
+                (#x1E `(add i (v ,_x__)))
+                (#x29 `(ld f (v ,_x__)))
+                (#x33 `(ld b (v ,_x__)))
+                (#x55 `(ld (mem i) ,_x__))
+                (#x65 `(ld ,_x__ (mem i))))))))
+
+(defun bit-diagram (integer)
+  (iterate (for high-bit :from 15 :downto 8)
+           (for low-bit :from 7 :downto 0)
+           (for hi = (logbitp high-bit integer))
+           (for lo = (logbitp low-bit integer))
+           (collect (cond
+                      ((and hi lo) #\full_block)
+                      (hi #\upper_half_block)
+                      (lo #\lower_half_block)
+                      (t #\space))
+                    :result-type 'string)))
+
+(defun retrieve-instruction (array index)
+  (chip8::cat-bytes (aref array index)
+                    ;; ugly hack to handle odd-sized roms
+                    (if (< (1+ index) (length array))
+                      (aref array (1+ index))
+                      0)))
+
+(defun instruction-information (array index)
+  (let ((instruction (retrieve-instruction array index)))
+    (list index
+          instruction
+          (disassemble-instruction instruction)
+          (bit-diagram instruction))))
+
+(defun print-disassembled-instruction (array index)
+  (destructuring-bind (address instruction disassembly bits)
+      (instruction-information array index)
+    (format t "~3,'0X: ~4,'0X ~24A ~8A~%"
+            address
+            instruction
+            (or disassembly "")
+            bits)))
+
+(defun disassemble-instructions (array start)
+  (iterate
+    (for i :from start :below (length array) :by 2)
+    (collect (instruction-information array i) :result-type vector)))
+
+(defun dump-disassembly (array &optional (start 0) (end (length array)))
+  (iterate
+    (for i :from start :below end :by 2)
+    (print-disassembled-instruction array i)
+    (sleep 0.001)))
+
+
+;;;; Debugger -----------------------------------------------------------------
+(declaim (ftype (function (debugger) boolean)
+                debugger-should-wait-p))
+
+
+(defun debugger-pause (debugger)
+  (with-debugger (debugger)
+    (setf paused t print-needed t)))
+
+(defun debugger-unpause (debugger)
+  (with-debugger (debugger)
+    (setf paused nil print-needed nil)))
+
+(defun debugger-toggle-pause (debugger)
+  (if (debugger-paused debugger)
+    (debugger-unpause debugger)
+    (debugger-pause debugger)))
+
+(defun debugger-step (debugger)
+  (with-debugger (debugger)
+    (setf take-step t)))
+
+(defun debugger-print (debugger chip)
+  (with-debugger (debugger)
+    (when (and paused print-needed)
+      (setf print-needed nil)
+      (destructuring-bind (address instruction disassembly bits)
+          (instruction-information (chip-memory chip) (chip-program-counter chip))
+        (format t "~3,'0X: ~4,'0X ~24A ~8A~%"
+                address
+                instruction
+                (or disassembly "")
+                bits)))))
+
+(defun debugger-should-wait-p (debugger)
+  (with-debugger (debugger)
+    (if (not paused) ; if we're not paused, we never need to wait
+      nil
+      (if take-step
+        (progn (setf take-step nil ; if we're paused, but are ready to step, go 
+                     print-needed t)
+               nil)
+        t)))) ; otherwise we're fully paused -- wait
 
 
 ;;;; Graphics -----------------------------------------------------------------
@@ -360,7 +511,6 @@
   (ftype (function (chip int16) null) dispatch-instruction))
 
 (defparameter *running* t)
-(defparameter *paused* nil)
 (defparameter *c* nil)
 
 
@@ -427,24 +577,23 @@
 
 (defun emulate-cycle (chip)
   (with-chip (chip)
-    (if (or *paused* awaiting-key)
-      (sleep 10/1000)
-      (let ((instruction (cat-bytes (aref memory program-counter)
-                                    (aref memory (1+ program-counter)))))
-        ; (format t "~4,'0X: ~4,'0X~%" program-counter instruction)
-        (zapf program-counter (chop 12 (+ % 2)))
-        (dispatch-instruction chip instruction)
-        (sleep 0.001)
-        (update-timers chip)))
+    (debugger-print debugger chip)
+    (cond
+      ((debugger-should-wait-p debugger) (sleep 100/1000))
+      (awaiting-key (sleep 10/1000))
+      (t (let ((instruction (cat-bytes (aref memory program-counter)
+                                       (aref memory (1+ program-counter)))))
+           (zapf program-counter (chop 12 (+ % 2)))
+           (dispatch-instruction chip instruction)
+           (sleep 0.001)
+           (update-timers chip))))
     (setf timer-previous (get-internal-real-time))
     nil))
 
 
 (defun run (rom-filename)
   (let ((chip (make-chip)))
-    (setf *running* t
-          *paused* nil
-          *c* chip)
+    (setf *running* t *c* chip)
     (load-rom chip rom-filename)
     (bt:make-thread
       (lambda ()

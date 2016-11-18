@@ -3,7 +3,21 @@
 (declaim (optimize (debug 3)))
 
 
+(defparameter *font* (q+:make-qfont "Menlo" 12))
+
+
+;;;; Main GUI -----------------------------------------------------------------
+(define-widget debugger (QWidget)
+  ((model-disassembly :initarg :model-disassembly)
+   (model-stack :initarg :model-stack)))
+
+(define-initializer (debugger setup)
+  (setf (q+:window-title debugger) "Debugger")
+  (q+:resize debugger 560 400))
+
+
 ;;;; Disassembler -------------------------------------------------------------
+;;;; Code
 (defun disassemble-instruction (instruction)
   (let ((_x__ (ldb (byte 4 8) instruction))
         (__x_ (ldb (byte 4 4) instruction))
@@ -102,9 +116,7 @@
   (disassemble-instructions *rom* 0))
 
 
-;;;; Model --------------------------------------------------------------------
-(defparameter *font* (q+:make-qfont "Menlo" 12))
-
+;;;; Model
 (define-widget disassembly-model (QAbstractTableModel)
   ((chip :accessor model-chip :initarg :chip)))
 
@@ -121,7 +133,7 @@
   (and (q+:is-valid index)
        (< (q+:row index) (ceiling 4096 2))))
 
-(defun get-contents (model row col)
+(defun get-disassembly-contents (model row col)
   (let ((data (-<> model
                 model-chip
                 chip8::chip-memory
@@ -142,7 +154,7 @@
     (if (not (index-valid-p index))
       (q+:make-qvariant)
       (qtenumcase role
-        ((q+:qt.display-role) (get-contents disassembly-model row col))
+        ((q+:qt.display-role) (get-disassembly-contents disassembly-model row col))
         ((q+:qt.font-role) *font*)
         ((q+:qt.text-alignment-role) (case col
                                        (0 #x0082)
@@ -163,29 +175,97 @@
     (t (q+:make-qvariant))))
 
 
-(define-widget debugger (QWidget)
-  ((model :accessor debugger-model :initarg :model)))
-
-
-(define-subwidget (debugger table) (q+:make-qtableview debugger)
-  (q+:set-model table model)
-  (q+:set-show-grid table nil)
-  (q+:set-column-width table 0 40)
-  (q+:set-column-width table 1 60)
-  (q+:set-column-width table 2 200)
-  (q+:set-column-width table 3 90)
-  (let ((vheader (q+:vertical-header table)))
+;;;; Layout
+(define-subwidget (debugger disassembly-table) (q+:make-qtableview debugger)
+  (q+:set-model disassembly-table model-disassembly)
+  (q+:set-show-grid disassembly-table nil)
+  (q+:set-column-width disassembly-table 0 40)
+  (q+:set-column-width disassembly-table 1 60)
+  (q+:set-column-width disassembly-table 2 200)
+  (q+:set-column-width disassembly-table 3 90)
+  (let ((vheader (q+:vertical-header disassembly-table)))
     (q+:set-resize-mode vheader (q+:qheaderview.fixed))
-    (q+:set-default-section-size vheader 14)
-    )
-  )
+    (q+:set-default-section-size vheader 14)))
 
-(define-subwidget (debugger layout) (q+:make-qvboxlayout debugger)
-  (q+:add-widget layout table))
+
+;;;; Stack Viewer -------------------------------------------------------------
+;;;; Code
+(defun stack-value (chip index)
+  (aref (chip8::chip-stack chip) index))
+
+(defun stack-size (chip)
+  (length (chip8::chip-stack chip)))
+
+
+;;;; Model
+(define-widget stack-model (QAbstractListModel)
+  ((chip :initarg :chip)))
+
+(define-override (stack-model row-count) (index)
+  (declare (ignore index))
+  (stack-size chip))
+
+
+(defun stack-index-valid-p (index chip)
+  (and (q+:is-valid index)
+       (< (q+:row index) (stack-size chip))))
+
+(defun get-stack-contents (chip row)
+  (format nil "~3,'0X" (stack-value chip row)))
+
+
+(define-override (stack-model data) (index role)
+  (let ((row (q+:row index)))
+    (if (not (index-valid-p index))
+      (q+:make-qvariant)
+      (qtenumcase role
+        ((q+:qt.display-role) (get-stack-contents chip row))
+        ((q+:qt.font-role) *font*)
+        ; ((q+:qt.text-alignment-role) (case col
+        ;                                (0 #x0082)
+        ;                                (1 #x0084)
+        ;                                (2 #x0080)
+        ;                                (3 #x0080)))
+        (t (q+:make-qvariant))))))
+
+
+;;;; Layout
+(define-subwidget (debugger stack-list) (q+:make-qlistview debugger)
+  (q+:set-model stack-list model-stack))
+
+(define-subwidget (debugger stack-label)
+  (q+:make-qlabel "Stack" debugger))
+
+(define-subwidget (debugger stack-refresh)
+  (q+:make-qpushbutton "Refresh" debugger))
+
+(define-slot (debugger stack-refresh-pressed) ()
+  (declare (connected stack-refresh (pressed)))
+  (signal! model-stack (layout-changed)))
+
+
+;;;; Main GUI -----------------------------------------------------------------
+(define-subwidget (debugger layout) (q+:make-qhboxlayout debugger)
+  (let ((disassembly (q+:make-qvboxlayout)))
+    (q+:add-widget disassembly disassembly-table)
+    (q+:add-layout layout disassembly))
+  (let ((stack (q+:make-qvboxlayout)))
+    (q+:set-fixed-width stack-label 70)
+    (q+:set-fixed-width stack-list 70)
+    (q+:set-fixed-width stack-refresh 80)
+    (q+:add-widget stack stack-label)
+    (q+:add-widget stack stack-list)
+    (q+:add-widget stack stack-refresh)
+    (q+:add-layout layout stack)))
 
 
 (defun run (chip)
-  (let ((model (make-instance 'disassembly-model :chip chip)))
-    (with-main-window (window (make-instance 'debugger :model model)))))
+  (let ((model-disassembly (make-instance 'disassembly-model :chip chip))
+        (model-stack (make-instance 'stack-model :chip chip)))
+    (with-main-window (window (make-instance 'debugger
+                                :model-disassembly model-disassembly
+                                :model-stack model-stack)))))
+
 
 (defparameter *c* (chip8::make-chip))
+(chip8::load-rom *c* "roms/breakout.rom")

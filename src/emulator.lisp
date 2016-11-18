@@ -3,7 +3,7 @@
 (setf *print-length* 16)
 (setf *print-base* 10)
 (declaim (optimize (speed 1) (safety 3) (debug 3)))
-; (declaim (optimize (speed 3) (safety 1) (debug 3)))
+(declaim (optimize (speed 3) (safety 1) (debug 3)))
 
 
 ;;;; Constants ----------------------------------------------------------------

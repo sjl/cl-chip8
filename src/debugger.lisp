@@ -4,17 +4,25 @@
 
 
 (defparameter *font* (q+:make-qfont "Menlo" 12))
+(defparameter *current-instruction-brush*
+  (q+:make-qbrush (q+:make-qcolor 216 162 223)))
 
 
 ;;;; Main GUI -----------------------------------------------------------------
 (define-widget debugger (QWidget)
   ((model-disassembly :initarg :model-disassembly)
    (model-registers :initarg :model-registers)
-   (model-stack :initarg :model-stack)))
+   (model-stack :initarg :model-stack)
+   (chip-debugger :initarg :chip-debugger)))
 
 (define-initializer (debugger setup)
   (setf (q+:window-title debugger) "Debugger")
   (q+:resize debugger 580 800))
+
+
+;;;; Utils --------------------------------------------------------------------
+(defun model-index (model row col)
+  (q+:index model row col (q+:make-qmodelindex)))
 
 
 ;;;; Disassembler -------------------------------------------------------------
@@ -27,7 +35,20 @@
 
 ;;;; Model
 (define-widget disassembly-model (QAbstractTableModel)
-  ((chip :accessor model-chip :initarg :chip)))
+  ((chip :initarg :chip)
+   (current-address :initform 0)))
+
+(defun disassembly-model-update-current-address (model new-address)
+  (let* ((old-address (slot-value model 'current-address))
+         (old-row (floor old-address 2))
+         (new-row (floor new-address 2)))
+    (setf (slot-value model 'current-address) new-address)
+    (signal! model (data-changed "QModelIndex" "QModelIndex")
+             (model-index model old-row 0)
+             (model-index model old-row 3))
+    (signal! model (data-changed "QModelIndex" "QModelIndex")
+             (model-index model new-row 0)
+             (model-index model new-row 3))))
 
 (define-override (disassembly-model column-count) (index)
   (declare (ignore index))
@@ -44,7 +65,7 @@
 
 (defun get-disassembly-contents (model row col)
   (let ((data (-<> model
-                model-chip
+                (slot-value <> 'chip)
                 (disassemble-address <> (* 2 row))
                 (nth col <>))))
     (ecase col
@@ -62,13 +83,22 @@
     (if (not (disassembly-index-valid-p index))
       (q+:make-qvariant)
       (qtenumcase role
-        ((q+:qt.display-role) (get-disassembly-contents disassembly-model row col))
+        ((q+:qt.display-role)
+         (get-disassembly-contents disassembly-model row col))
+
         ((q+:qt.font-role) *font*)
+
+        ((q+:qt.background-role)
+         (if (= row (floor current-address 2))
+           *current-instruction-brush*
+           (q+:make-qvariant)))
+
         ((q+:qt.text-alignment-role) (case col
                                        (0 #x0082)
                                        (1 #x0084)
                                        (2 #x0080)
                                        (3 #x0080)))
+
         (t (q+:make-qvariant))))))
 
 (define-override (disassembly-model header-data) (section orientation role)
@@ -84,7 +114,23 @@
 
 
 ;;;; Layout
+(defun disassembly-update-address (model view address)
+  (disassembly-model-update-current-address model address)
+  (-<> address
+    ;; raw address -> row number
+    (floor <> 2)
+    ;; Give ourselves a bit of breathing room at the top of the table
+    (- <> 4)
+    (max <> 0)
+    ;; get a QModelIndex, because passing a pair of ints would be too easy
+    (model-index model <> 0)
+    ;; make the debugger show the current line
+    (q+:scroll-to view <> (q+:qabstractitemview.position-at-top))))
+
 (define-subwidget (debugger disassembly-table) (q+:make-qtableview debugger)
+  (chip8::debugger-add-callback-arrived
+    chip-debugger ; bit of a fustercluck here...
+    (curry #'disassembly-update-address model-disassembly disassembly-table))
   (q+:set-model disassembly-table model-disassembly)
   (q+:set-show-grid disassembly-table nil)
   (q+:set-column-width disassembly-table 0 40)
@@ -151,13 +197,22 @@
 
 
 ;;;; Layout
+(defun registers-refresh (model view address)
+  (declare (ignore view address))
+  (signal! model (data-changed "QModelIndex" "QModelIndex")
+           (model-index model 0 1)
+           (model-index model 18 1)))
+
 (define-subwidget (debugger registers-table) (q+:make-qtableview debugger)
+  (chip8::debugger-add-callback-arrived
+    chip-debugger
+    (curry #'registers-refresh model-registers registers-table))
   (q+:set-model registers-table model-registers)
   (q+:set-show-grid registers-table nil)
   (q+:set-column-width registers-table 0 30)
   (q+:set-column-width registers-table 1 40)
   (let ((vheader (q+:vertical-header registers-table)))
-    (q+:hide vheader)  
+    (q+:hide vheader)
     (q+:set-resize-mode vheader (q+:qheaderview.fixed))
     (q+:set-default-section-size vheader 14))
   (let ((hheader (q+:horizontal-header registers-table)))
@@ -206,18 +261,20 @@
 
 
 ;;;; Layout
+(defun stack-refresh (model view address)
+  (declare (ignore view address))
+  ;; fuck it just refresh everything
+  (signal! model (layout-changed)))
+
 (define-subwidget (debugger stack-list) (q+:make-qlistview debugger)
+  (chip8::debugger-add-callback-arrived
+    chip-debugger
+    (curry #'stack-refresh model-stack stack-list))
   (q+:set-model stack-list model-stack))
 
 (define-subwidget (debugger stack-label)
   (q+:make-qlabel "Stack" debugger))
 
-(define-subwidget (debugger stack-refresh)
-  (q+:make-qpushbutton "Refresh" debugger))
-
-(define-slot (debugger stack-refresh-pressed) ()
-  (declare (connected stack-refresh (pressed)))
-  (signal! model-stack (layout-changed)))
 
 
 ;;;; Main GUI -----------------------------------------------------------------
@@ -230,11 +287,9 @@
     (q+:set-fixed-width stack-label 90)
     (q+:set-fixed-width stack-list 90)
     (q+:set-maximum-height stack-list 260)
-    (q+:set-fixed-width stack-refresh 100)
     (q+:add-widget values registers-table)
     (q+:add-widget values stack-label)
     (q+:add-widget values stack-list)
-    (q+:add-widget values stack-refresh)
     (q+:add-layout layout values)))
 
 
@@ -245,7 +300,8 @@
     (make-instance 'debugger
       :model-disassembly model-disassembly
       :model-registers model-registers
-      :model-stack model-stack)))
+      :model-stack model-stack
+      :chip-debugger (chip8::chip-debugger chip))))
 
 (defun run (chip)
   (with-main-window (window (make-debugger chip))))

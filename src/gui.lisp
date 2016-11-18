@@ -132,26 +132,38 @@
 
 
 (defun pad-key-for (code)
+  ;; Original Chip-8 Pad → Modern Numpad
+  ;; ┌─┬─┬─┬─┐             ┌─┬─┬─┬─┐
+  ;; │1│2│3│C│             │←│/│*│-│
+  ;; ├─┼─┼─┼─┤             ├─┼─┼─┼─┤
+  ;; │4│5│6│D│             │7│8│9│+│
+  ;; ├─┼─┼─┼─┤             ├─┼─┼─┤ │
+  ;; │7│8│9│E│             │4│5│6│ │
+  ;; ├─┼─┼─┼─┤             ├─┼─┼─┼─┤
+  ;; │A│0│B│F│             │1│2│3│↲│
+  ;; └─┴─┴─┴─┘             ├─┴─┼─┤ │
+  ;;                       │0  │.│ │
+  ;;                       └───┴─┴─┘
   (cond
-    ((= code (q+:qt.key_6)) #x1)
-    ((= code (q+:qt.key_7)) #x2)
-    ((= code (q+:qt.key_8)) #x3)
-    ((= code (q+:qt.key_9)) #xC)
+    ((= code (q+:qt.key_clear)) #x1)
+    ((= code (q+:qt.key_slash)) #x2)
+    ((= code (q+:qt.key_asterisk)) #x3)
+    ((= code (q+:qt.key_minus)) #xC)
 
-    ((= code (q+:qt.key_y)) #x4)
-    ((= code (q+:qt.key_u)) #x5)
-    ((= code (q+:qt.key_i)) #x6)
-    ((= code (q+:qt.key_o)) #xD)
+    ((= code (q+:qt.key_7)) #x4)
+    ((= code (q+:qt.key_8)) #x5)
+    ((= code (q+:qt.key_9)) #x6)
+    ((= code (q+:qt.key_plus)) #xD)
 
-    ((= code (q+:qt.key_h)) #x7)
-    ((= code (q+:qt.key_j)) #x8)
-    ((= code (q+:qt.key_k)) #x9)
-    ((= code (q+:qt.key_l)) #xE)
+    ((= code (q+:qt.key_4)) #x7)
+    ((= code (q+:qt.key_5)) #x8)
+    ((= code (q+:qt.key_6)) #x9)
+    ((= code (q+:qt.key_enter)) #xE)
 
-    ((= code (q+:qt.key_n)) #xA)
-    ((= code (q+:qt.key_m)) #x0)
-    ((= code (q+:qt.key_comma)) #xB)
-    ((= code (q+:qt.key_period)) #xF)))
+    ((= code (q+:qt.key_1)) #xA)
+    ((= code (q+:qt.key_2)) #x0)
+    ((= code (q+:qt.key_3)) #xB)
+    ((= code (q+:qt.key_0)) #xF)))
 
 
 (define-override (screen key-press-event) (ev)
@@ -175,7 +187,9 @@
          (-> chip chip8::chip-debugger chip8::debugger-toggle-pause))
 
         ((q+:qt.key_f7)
-         (-> chip chip8::chip-debugger chip8::debugger-step)))))
+         (-> chip chip8::chip-debugger chip8::debugger-step))
+
+        (t (pr "Unknown key pressed" (format nil "~X" key))))))
   (stop-overriding))
 
 

@@ -77,7 +77,9 @@
 (defstruct debugger
   (paused nil :type boolean)
   (take-step nil :type boolean)
-  (print-needed nil :type boolean))
+  (print-needed nil :type boolean)
+  (callbacks-arrived nil :type list))
+
 
 (defstruct chip
   (memory (make-simple-array 'int8 4096)
@@ -123,7 +125,8 @@
   debugger)
 
 (define-with-macro debugger
-  paused take-step print-needed)
+  paused take-step print-needed
+  callbacks-arrived)
 
 (declaim (inline chip-flag (setf chip-flag)))
 
@@ -256,14 +259,17 @@
 (defun debugger-print (debugger chip)
   (with-debugger (debugger)
     (when (and paused print-needed)
-      (setf print-needed nil)
-      (destructuring-bind (address instruction disassembly bits)
-          (instruction-information (chip-memory chip) (chip-program-counter chip))
-        (format t "~3,'0X: ~4,'0X ~24A ~8A~%"
-                address
-                instruction
-                (or disassembly "")
-                bits)))))
+      (let ((pc (chip-program-counter chip)))
+        (setf print-needed nil)
+        (destructuring-bind (address instruction disassembly bits)
+            (instruction-information (chip-memory chip) pc)
+          (format t "~3,'0X: ~4,'0X ~24A ~8A~%"
+                  address
+                  instruction
+                  (or disassembly "")
+                  bits))
+        (mapc (rcurry #'funcall pc) callbacks-arrived))))
+  (values))
 
 (defun debugger-should-wait-p (debugger)
   (with-debugger (debugger)
@@ -274,6 +280,10 @@
                      print-needed t)
                nil)
         t)))) ; otherwise we're fully paused -- wait
+
+(defun debugger-add-callback-arrived (debugger function)
+  (push function (debugger-callbacks-arrived debugger))
+  t)
 
 
 ;;;; Graphics -----------------------------------------------------------------
@@ -580,7 +590,7 @@
   (with-chip (chip)
     (debugger-print debugger chip)
     (cond
-      ((debugger-should-wait-p debugger) (sleep 100/1000))
+      ((debugger-should-wait-p debugger) (sleep 10/1000))
       (awaiting-key (sleep 10/1000))
       (t (let ((instruction (cat-bytes (aref memory program-counter)
                                        (aref memory (1+ program-counter)))))
@@ -605,3 +615,6 @@
 
 
 ;;;; Scratch ------------------------------------------------------------------
+
+; (-<> *c* chip-debugger debugger-callbacks-arrived
+;   (push (lambda (pc) (pr 'hello pc)) <>))

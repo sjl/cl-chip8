@@ -166,12 +166,15 @@
     (q+:add-layout layout stack)))
 
 
-(defun run (chip)
+(defun make-debugger (chip)
   (let ((model-disassembly (make-instance 'disassembly-model :chip chip))
         (model-stack (make-instance 'stack-model :chip chip)))
-    (with-main-window (window (make-instance 'debugger
-                                :model-disassembly model-disassembly
-                                :model-stack model-stack)))))
+    (make-instance 'debugger
+      :model-disassembly model-disassembly
+      :model-stack model-stack)))
+
+(defun run (chip)
+  (with-main-window (window (make-debugger chip))))
 
 
 (defparameter *c* (chip8::make-chip))

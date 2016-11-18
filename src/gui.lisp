@@ -34,15 +34,25 @@
 ;;;; Screen -------------------------------------------------------------------
 (define-widget screen (QGLWidget)
   ((texture :accessor screen-texture)
+   (debugger :accessor screen-debugger :initarg :debugger)
    (chip :accessor screen-chip :initarg :chip)))
+
+(defun make-screen (chip)
+  (let ((debugger (chip8.debugger::make-debugger chip)))
+    (make-instance 'screen
+      :debugger debugger
+      :chip chip)))
+
 
 (defun die (screen)
   (setf chip8::*running* nil)
+  (q+:close (screen-debugger screen))
   (q+:close screen))
 
 (define-initializer (screen setup)
   (setf (q+:window-title screen) "cl-chip8"
-        (q+:fixed-size screen) (values *width* *height*)))
+        (q+:fixed-size screen) (values *width* *height*))
+  (q+:show debugger))
 
 (define-override (screen "initializeGL") ()
   (setf (screen-texture screen) (initialize-texture 64))
@@ -172,6 +182,6 @@
 ;;;; Main ---------------------------------------------------------------------
 (defun run-gui (chip)
   (with-main-window
-    (window (make-instance 'screen :chip chip))))
+    (window (make-screen chip))))
 
 

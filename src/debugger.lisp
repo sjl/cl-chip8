@@ -9,11 +9,12 @@
 ;;;; Main GUI -----------------------------------------------------------------
 (define-widget debugger (QWidget)
   ((model-disassembly :initarg :model-disassembly)
+   (model-registers :initarg :model-registers)
    (model-stack :initarg :model-stack)))
 
 (define-initializer (debugger setup)
   (setf (q+:window-title debugger) "Debugger")
-  (q+:resize debugger 560 400))
+  (q+:resize debugger 580 800))
 
 
 ;;;; Disassembler -------------------------------------------------------------
@@ -37,7 +38,7 @@
   (ceiling 4096 2))
 
 
-(defun index-valid-p (index)
+(defun disassembly-index-valid-p (index)
   (and (q+:is-valid index)
        (< (q+:row index) (ceiling 4096 2))))
 
@@ -51,14 +52,14 @@
       (1 (format nil "~4,'0X" data))
       (2 (if data
            (let ((*print-base* 16))
-             (format nil "~A ~{~S~^, ~}" (first data) (rest data)))
+             (format nil "~A ~{~A~^, ~}" (first data) (rest data)))
            ""))
       (3 data))))
 
 (define-override (disassembly-model data) (index role)
   (let ((row (q+:row index))
         (col (q+:column index)))
-    (if (not (index-valid-p index))
+    (if (not (disassembly-index-valid-p index))
       (q+:make-qvariant)
       (qtenumcase role
         ((q+:qt.display-role) (get-disassembly-contents disassembly-model row col))
@@ -91,8 +92,76 @@
   (q+:set-column-width disassembly-table 2 200)
   (q+:set-column-width disassembly-table 3 90)
   (let ((vheader (q+:vertical-header disassembly-table)))
+    (q+:hide vheader)
     (q+:set-resize-mode vheader (q+:qheaderview.fixed))
     (q+:set-default-section-size vheader 14)))
+
+
+;;;; Register Viewer ----------------------------------------------------------
+;;;; Code
+(defun registers-label (row)
+  (cond
+    ((<= row 15) (format nil "V~X" row))
+    ((= row 16) "I")
+    ((= row 17) "PC")))
+
+(defun registers-value (chip row)
+  (cond
+    ((<= row 15) (format nil "~2,'0X"
+                         (aref (chip8::chip-registers chip) row)))
+    ((= row 16) (format nil "~4,'0X" (chip8::chip-index chip)))
+    ((= row 17) (format nil "~3,'0X" (chip8::chip-program-counter chip)))))
+
+
+;;;; Model
+(define-widget registers-model (QAbstractTableModel)
+  ((chip :initarg :chip)))
+
+
+(define-override (registers-model column-count) (index)
+  (declare (ignore index))
+  2)
+
+(define-override (registers-model row-count) (index)
+  (declare (ignore index))
+  18)
+
+
+(defun registers-index-valid-p (index)
+  (and (q+:is-valid index)
+       (< (q+:row index) 18)))
+
+(define-override (registers-model data) (index role)
+  (let ((row (q+:row index))
+        (col (q+:column index)))
+    (if (not (registers-index-valid-p index))
+      (q+:make-qvariant)
+      (qtenumcase role
+        ((q+:qt.display-role)
+         (ecase col
+           (0 (registers-label row))
+           (1 (registers-value chip row))))
+        ((q+:qt.text-alignment-role) #x0082)
+        ((q+:qt.font-role) *font*)
+        (t (q+:make-qvariant))))))
+
+(define-override (registers-model header-data) (section orientation role)
+  (declare (ignore section orientation role))
+  (q+:make-qvariant))
+
+
+;;;; Layout
+(define-subwidget (debugger registers-table) (q+:make-qtableview debugger)
+  (q+:set-model registers-table model-registers)
+  (q+:set-show-grid registers-table nil)
+  (q+:set-column-width registers-table 0 30)
+  (q+:set-column-width registers-table 1 40)
+  (let ((vheader (q+:vertical-header registers-table)))
+    (q+:hide vheader)  
+    (q+:set-resize-mode vheader (q+:qheaderview.fixed))
+    (q+:set-default-section-size vheader 14))
+  (let ((hheader (q+:horizontal-header registers-table)))
+    (q+:hide hheader)))
 
 
 ;;;; Stack Viewer -------------------------------------------------------------
@@ -123,7 +192,7 @@
 
 (define-override (stack-model data) (index role)
   (let ((row (q+:row index)))
-    (if (not (index-valid-p index))
+    (if (not (stack-index-valid-p index chip))
       (q+:make-qvariant)
       (qtenumcase role
         ((q+:qt.display-role) (get-stack-contents chip row))
@@ -156,21 +225,26 @@
   (let ((disassembly (q+:make-qvboxlayout)))
     (q+:add-widget disassembly disassembly-table)
     (q+:add-layout layout disassembly))
-  (let ((stack (q+:make-qvboxlayout)))
-    (q+:set-fixed-width stack-label 70)
-    (q+:set-fixed-width stack-list 70)
-    (q+:set-fixed-width stack-refresh 80)
-    (q+:add-widget stack stack-label)
-    (q+:add-widget stack stack-list)
-    (q+:add-widget stack stack-refresh)
-    (q+:add-layout layout stack)))
+  (let ((values (q+:make-qvboxlayout)))
+    (q+:set-fixed-width registers-table 90)
+    (q+:set-fixed-width stack-label 90)
+    (q+:set-fixed-width stack-list 90)
+    (q+:set-maximum-height stack-list 260)
+    (q+:set-fixed-width stack-refresh 100)
+    (q+:add-widget values registers-table)
+    (q+:add-widget values stack-label)
+    (q+:add-widget values stack-list)
+    (q+:add-widget values stack-refresh)
+    (q+:add-layout layout values)))
 
 
 (defun make-debugger (chip)
   (let ((model-disassembly (make-instance 'disassembly-model :chip chip))
+        (model-registers (make-instance 'registers-model :chip chip))
         (model-stack (make-instance 'stack-model :chip chip)))
     (make-instance 'debugger
       :model-disassembly model-disassembly
+      :model-registers model-registers
       :model-stack model-stack)))
 
 (defun run (chip)

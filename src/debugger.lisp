@@ -104,11 +104,9 @@
 
 ;;;; Model --------------------------------------------------------------------
 (defparameter *font* (q+:make-qfont "Menlo" 12))
-(defparameter *font2* (q+:make-qfont "Menlo" 12))
 
 (define-widget disassembly-model (QAbstractTableModel)
-  ((data :accessor model-data :initarg :data :initform *test*)
-   (chip :accessor model-chip :initarg :chip)))
+  ((chip :accessor model-chip :initarg :chip)))
 
 (define-override (disassembly-model column-count) (index)
   (declare (ignore index))
@@ -145,9 +143,7 @@
       (q+:make-qvariant)
       (qtenumcase role
         ((q+:qt.display-role) (get-contents disassembly-model row col))
-        ((q+:qt.font-role) (case col
-                             (3 *font2*)
-                             (t *font*)))
+        ((q+:qt.font-role) *font*)
         ((q+:qt.text-alignment-role) (case col
                                        (0 #x0082)
                                        (1 #x0084)

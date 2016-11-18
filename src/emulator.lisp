@@ -74,7 +74,7 @@
 
 
 ;;;; Data ---------------------------------------------------------------------
-(defstruct (chip (:constructor make-chip%))
+(defstruct chip
   (memory (make-simple-array 'int8 4096)
           :type (basic-array int8 4096)
           :read-only t)
@@ -104,11 +104,6 @@
            :fill-pointer 0
            :element-type 'int12)
          :type (stack 16)))
-
-(defun make-chip ()
-  (let ((chip (make-chip%)))
-    (load-font chip)
-    chip))
 
 (define-with-macro chip
   memory registers
@@ -370,8 +365,11 @@
 
 
 (defun load-rom (chip filename)
+  (fill (chip-memory chip) 0)
+  (load-font chip)
   (replace (chip-memory chip) (read-file-into-byte-vector filename)
-           :start1 #x200))
+           :start1 #x200)
+  (values))
 
 (defun update-timers (chip)
   (with-chip (chip)

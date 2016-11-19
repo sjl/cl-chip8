@@ -186,6 +186,9 @@
         ((q+:qt.key_space)
          (-> chip chip8::chip-debugger chip8::debugger-toggle-pause))
 
+        ((q+:qt.key_r)
+         (-> chip chip8::reset))
+
         ((q+:qt.key_f7)
          (-> chip chip8::chip-debugger chip8::debugger-step))
 

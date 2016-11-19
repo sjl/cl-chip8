@@ -94,8 +94,6 @@
   (keys (make-simple-array 'boolean 16)
         :type (basic-array boolean 16)
         :read-only t)
-  (awaiting-key nil
-                :type (or null (integer 0 15)))
   (video (make-simple-array 'fixnum (* 32 64))
          :type (basic-array fixnum #.(* 32 64))
          :read-only t)
@@ -111,7 +109,9 @@
            :adjustable nil
            :fill-pointer 0
            :element-type 'int12)
-         :type (stack 16))
+         :type (stack 16)
+         :read-only t)
+  (loaded-rom nil :type (or null string))
   (debugger (make-debugger) :type debugger :read-only t))
 
 (define-with-macro chip
@@ -122,8 +122,9 @@
   delay-timer sound-timer
   random-state
   video video-dirty
-  keys awaiting-key
+  keys
   stack
+  loaded-rom
   debugger)
 
 (define-with-macro debugger
@@ -366,11 +367,7 @@
 (declaim (ftype (function (chip (integer 0 (16)))) keydown keyup))
 
 (defun keydown (chip key)
-  (with-chip (chip)
-    (setf (aref keys key) t)
-    (when-let* ((waiting-for awaiting-key))
-      (setf (aref registers waiting-for) key
-            awaiting-key nil))))
+  (setf (aref (chip-keys chip) key) t))
 
 (defun keyup (chip key)
   (setf (aref (chip-keys chip) key) nil))
@@ -492,7 +489,18 @@
   (replace registers memory :end1 n :start2 index))
 
 (define-opcode op-ld-reg<key (_ r _ _)                  ;; LD Vx, Key (await)
-  (setf awaiting-key r))
+  ;; I'm unsure how this instruction is supposed to interact with the timers.
+  ;;
+  ;; Either the timers should continue to count down while we wait for a key, or
+  ;; they should pause while waiting, but I can't find anything in the docs that
+  ;; spells it out.
+  ;;
+  ;; This implementation chooses the former (timers keep running) for now.
+  (let ((key (position t keys)))
+    (if key
+      (setf (register r) key)
+      ;; If we don't have a key, just execute this instruction again next time.
+      (decf program-counter 2))))
 
 (define-opcode op-shr (_ r _ _)                         ;; SHR
   (let ((value (register r)))
@@ -527,12 +535,26 @@
 (defparameter *c* nil)
 
 
-(defun load-rom (chip filename)
-  (fill (chip-memory chip) 0)
-  (load-font chip)
-  (replace (chip-memory chip) (read-file-into-byte-vector filename)
-           :start1 #x200)
+(defun reset (chip)
+  (with-chip (chip)
+    (fill memory 0)
+    (fill registers 0)
+    (fill keys 0)
+    (fill video 0)
+    (load-font chip)
+    (replace memory (read-file-into-byte-vector loaded-rom)
+             :start1 #x200)
+    (setf clock 0
+          video-dirty t
+          program-counter #x200
+          delay-timer 0
+          sound-timer 0
+          (fill-pointer stack) 0))
   (values))
+
+(defun load-rom (chip filename)
+  (setf (chip-loaded-rom chip) filename)
+  (reset chip))
 
 (defun update-timers (chip)
   (with-chip (chip)
@@ -586,17 +608,16 @@
 (defun emulate-cycle (chip)
   (with-chip (chip)
     (debugger-print debugger chip)
-    (cond
-      ((debugger-should-wait-p debugger) (sleep 10/1000))
-      (awaiting-key (sleep 10/1000))
-      (t (let ((instruction (cat-bytes (aref memory program-counter)
-                                       (aref memory (1+ program-counter)))))
-           (zapf program-counter (chop 12 (+ % 2)))
-           (incf clock)
-           (when (zerop (mod clock +cycles-per-timer-tick+))
-             (update-timers chip))
-           (dispatch-instruction chip instruction)
-           (sleep (/ 1 +cycles-per-second+)))))
+    (if (debugger-should-wait-p debugger)
+      (sleep 10/1000)
+      (let ((instruction (cat-bytes (aref memory program-counter)
+                                    (aref memory (1+ program-counter)))))
+        (zapf program-counter (chop 12 (+ % 2)))
+        (incf clock)
+        (when (zerop (mod clock +cycles-per-timer-tick+))
+          (update-timers chip))
+        (dispatch-instruction chip instruction)
+        (sleep (/ 1 +cycles-per-second+))))
     nil))
 
 

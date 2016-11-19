@@ -7,6 +7,8 @@
 
 
 ;;;; Constants ----------------------------------------------------------------
+(defconstant +cycles-per-second+ 1000)
+(defconstant +cycles-per-timer-tick+ (floor +cycles-per-second+ 60))
 (defconstant +screen-width+ 64)
 (defconstant +screen-height+ 32)
 (defconstant +memory-size+ (* 1024 4))
@@ -82,6 +84,7 @@
 
 
 (defstruct chip
+  (clock 0 :type fixnum)
   (memory (make-simple-array 'int8 4096)
           :type (basic-array int8 4096)
           :read-only t)
@@ -101,8 +104,6 @@
   (program-counter #x200 :type int12)
   (delay-timer 0 :type int8)
   (sound-timer 0 :type int8)
-  (timer-clock +timer-tick+ :type fixnum)
-  (timer-previous 0 :type fixnum)
   (random-state (make-random-state t)
                 :type random-state
                 :read-only t)
@@ -114,10 +115,11 @@
   (debugger (make-debugger) :type debugger :read-only t))
 
 (define-with-macro chip
+  clock
   memory registers
   flag
   index program-counter
-  delay-timer sound-timer timer-clock timer-previous
+  delay-timer sound-timer
   random-state
   video video-dirty
   keys awaiting-key
@@ -534,13 +536,8 @@
 
 (defun update-timers (chip)
   (with-chip (chip)
-    (let* ((current-time (get-internal-real-time))
-           (elapsed (- current-time timer-previous)))
-      (decf timer-clock elapsed)
-      (when (minusp timer-clock)
-        (setf timer-clock +timer-tick+)
-        (when (plusp delay-timer) (decf delay-timer))
-        (when (plusp sound-timer) (decf sound-timer))))))
+    (when (plusp delay-timer) (decf delay-timer))
+    (when (plusp sound-timer) (decf sound-timer))))
 
 (defun dispatch-instruction (chip instruction)
   (macrolet ((call (name) `(,name chip instruction)))
@@ -595,10 +592,11 @@
       (t (let ((instruction (cat-bytes (aref memory program-counter)
                                        (aref memory (1+ program-counter)))))
            (zapf program-counter (chop 12 (+ % 2)))
+           (incf clock)
+           (when (zerop (mod clock +cycles-per-timer-tick+))
+             (update-timers chip))
            (dispatch-instruction chip instruction)
-           (sleep 0.001)
-           (update-timers chip))))
-    (setf timer-previous (get-internal-real-time))
+           (sleep (/ 1 +cycles-per-second+)))))
     nil))
 
 

@@ -6,13 +6,19 @@
 (declaim (optimize (speed 3) (safety 1) (debug 3)))
 
 
+;;;; Reference ----------------------------------------------------------------
+;;; http://devernay.free.fr/hacks/chip8/C8TECH10.HTM
+;;; http://mattmik.com/files/chip8/mastering/chip8.html
+;;; https://github.com/AfBu/haxe-chip-8-emulator/wiki/(Super)CHIP-8-Secrets
+
+
 ;;;; Constants ----------------------------------------------------------------
-(defconstant +cycles-per-second+ 1000)
-(defconstant +cycles-per-timer-tick+ (floor +cycles-per-second+ 60))
+(defconstant +cycles-per-second+ 500)
 (defconstant +screen-width+ 64)
 (defconstant +screen-height+ 32)
 (defconstant +memory-size+ (* 1024 4))
-(defconstant +timer-tick+ (round (* 1/60 internal-time-units-per-second)))
+
+(defparameter *running* t)
 
 
 ;;;; Types --------------------------------------------------------------------
@@ -84,7 +90,6 @@
 
 
 (defstruct chip
-  (clock 0 :type fixnum)
   (memory (make-simple-array 'int8 4096)
           :type (basic-array int8 4096)
           :read-only t)
@@ -115,7 +120,6 @@
   (debugger (make-debugger) :type debugger :read-only t))
 
 (define-with-macro chip
-  clock
   memory registers
   flag
   index program-counter
@@ -273,6 +277,9 @@
                   bits))
         (mapc (rcurry #'funcall pc) callbacks-arrived))))
   (values))
+
+(defun debugger-paused-p (debugger)
+  (debugger-paused debugger))
 
 (defun debugger-should-wait-p (debugger)
   (with-debugger (debugger)
@@ -483,10 +490,10 @@
     (incf program-counter 2)))
 
 (define-opcode op-ld-mem<regs (_ n _ _)                 ;; LD [I] < Vn
-  (replace memory registers :start1 index :end2 n))
+  (replace memory registers :start1 index :end2 (1+ n)))
 
 (define-opcode op-ld-regs<mem (_ n _ _)                 ;; LD Vn < [I]
-  (replace registers memory :end1 n :start2 index))
+  (replace registers memory :end1 (1+ n) :start2 index))
 
 (define-opcode op-ld-reg<key (_ r _ _)                  ;; LD Vx, Key (await)
   ;; I'm unsure how this instruction is supposed to interact with the timers.
@@ -526,12 +533,34 @@
   (draw-sprite chip (register rx) (register ry) size))
 
 
-;;;; Main ---------------------------------------------------------------------
+;;;; Timers -------------------------------------------------------------------
+(declaim
+  (ftype (function (chip) null) decrement-timers run-timers))
+
+(defun decrement-timers (chip)
+  (flet ((decrement (i)
+           (if (plusp i)
+             (1- i)
+             0)))
+    (with-chip (chip)
+      (sb-ext:atomic-update delay-timer #'decrement)
+      (sb-ext:atomic-update sound-timer #'decrement)))
+  nil)
+
+(defun run-timers (chip)
+  (iterate
+    (with debugger = (chip-debugger chip))
+    (while *running*)
+    (when (not (debugger-paused-p debugger))
+      (decrement-timers chip))
+    (sleep 1/60)))
+
+
+;;;; CPU ----------------------------------------------------------------------
 (declaim
   (ftype (function (chip) null) emulate-cycle)
   (ftype (function (chip int16) null) dispatch-instruction))
 
-(defparameter *running* t)
 (defparameter *c* nil)
 
 
@@ -539,13 +568,12 @@
   (with-chip (chip)
     (fill memory 0)
     (fill registers 0)
-    (fill keys 0)
+    (fill keys nil)
     (fill video 0)
     (load-font chip)
     (replace memory (read-file-into-byte-vector loaded-rom)
              :start1 #x200)
-    (setf clock 0
-          video-dirty t
+    (setf video-dirty t
           program-counter #x200
           delay-timer 0
           sound-timer 0
@@ -556,10 +584,6 @@
   (setf (chip-loaded-rom chip) filename)
   (reset chip))
 
-(defun update-timers (chip)
-  (with-chip (chip)
-    (when (plusp delay-timer) (decf delay-timer))
-    (when (plusp sound-timer) (decf sound-timer))))
 
 (defun dispatch-instruction (chip instruction)
   (macrolet ((call (name) `(,name chip instruction)))
@@ -613,23 +637,23 @@
       (let ((instruction (cat-bytes (aref memory program-counter)
                                     (aref memory (1+ program-counter)))))
         (zapf program-counter (chop 12 (+ % 2)))
-        (incf clock)
-        (when (zerop (mod clock +cycles-per-timer-tick+))
-          (update-timers chip))
         (dispatch-instruction chip instruction)
         (sleep (/ 1 +cycles-per-second+))))
     nil))
 
+(defun run-cpu (chip)
+  (iterate
+    (while *running*)
+    (emulate-cycle chip)))
 
+
+;;;; Main ---------------------------------------------------------------------
 (defun run (rom-filename)
   (let ((chip (make-chip)))
     (setf *running* t *c* chip)
     (load-rom chip rom-filename)
-    (bt:make-thread
-      (lambda ()
-        (iterate
-          (while *running*)
-          (emulate-cycle chip))))
+    (bt:make-thread (curry #'run-cpu chip))
+    (bt:make-thread (curry #'run-timers chip))
     (chip8.gui::run-gui chip)))
 
 

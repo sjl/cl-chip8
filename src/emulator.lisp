@@ -537,57 +537,48 @@
 (defconstant +pi+ (float pi 1.0))
 (defconstant +tau+ (* 2 +pi+))
 (defconstant +sample-rate+ 44100d0)
-(defconstant +audio-buffer-size+ 1024)
+(defconstant +audio-buffer-size+ 512)
 (defconstant +audio-buffer-time+ (* +audio-buffer-size+ (/ +sample-rate+)))
 
-(deftype angle ()
-  `(single-float 0.0 ,+tau+))
+(defun square (angle)
+  (if (< (mod angle +tau+) +pi+)
+    1.0
+    -1.0))
 
-(deftype audio-buffer ()
-  `(simple-array single-float (,+audio-buffer-size+)))
-
-
-(declaim
-  (ftype (function (angle) (single-float -1.0 1.0))
-         square sine)
-  (ftype (function (audio-buffer function angle angle) angle)
-         fill-buffer)
-  (inline square sine fill-buffer))
+(defun saw (angle)
+  (let ((a (mod angle +tau+)))
+    (if (< a +pi+)
+      (map-range 0   +pi+
+                 1.0 -1.0
+                 a)
+      (map-range +pi+ +tau+
+                 -1.0 1.0
+                 a))))
 
 
 (defun make-audio-buffer ()
   (make-simple-array 'single-float +audio-buffer-size+ :initial-element 0.0))
 
-
-(defun square (angle)
-  (declare (optimize (debug 0) (safety 0) (speed 3)))
-  (if (< angle +pi+)
-    1.0
-    -1.0))
-
-(defun sine (angle)
-  (declare (optimize (debug 0) (safety 0) (speed 3)))
-  (sin angle))
-
-
 (defun fill-buffer (buffer function rate start)
-  ; (declare (optimize (debug 0) (safety 0) (speed 3)))
   (iterate
-    (declare (iterate::declare-variables))
-    (for (the fixnum i) :index-of-vector buffer)
-    (for (the angle angle) :first start :then (mod (+ angle rate) +tau+))
+    (for i :index-of-vector buffer)
+    (for angle :from start :by rate)
     (setf (aref buffer i) (funcall function angle))
-    (finally (return angle))))
+    (finally (return (mod angle +tau+)))))
 
 (defun fill-square (buffer rate start)
   (fill-buffer buffer #'square rate start))
 
 (defun fill-sine (buffer rate start)
-  (fill-buffer buffer #'sine rate start))
+  (fill-buffer buffer #'sin rate start))
+
+(defun fill-sawtooth (buffer rate start)
+  (fill-buffer buffer #'saw rate start))
 
 
 (defun audio-rate (frequency)
   (float (* (/ +tau+ +sample-rate+) frequency) 1.0))
+
 
 (defun run-sound (chip)
   (portaudio:with-audio
@@ -604,7 +595,7 @@
                  (if (and (plusp sound-timer)
                           (not (debugger-paused-p debugger)))
                    (progn
-                     (setf angle (fill-square buffer rate angle))
+                     (setf angle (fill-sawtooth buffer rate angle))
                      (portaudio:write-stream audio-stream buffer))
                    (sleep +audio-buffer-time+)))))))
 

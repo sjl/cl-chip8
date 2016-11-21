@@ -11,6 +11,7 @@
                :losh
                :cl-arrows
                :bordeaux-threads
+               :cl-portaudio
                :qtools
                :qtcore
                :qtgui

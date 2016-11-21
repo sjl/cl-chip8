@@ -286,7 +286,7 @@
     (if (not paused) ; if we're not paused, we never need to wait
       nil
       (if take-step
-        (progn (setf take-step nil ; if we're paused, but are ready to step, go 
+        (progn (setf take-step nil ; if we're paused, but are ready to step, go
                      print-needed t)
                nil)
         t)))) ; otherwise we're fully paused -- wait
@@ -533,6 +533,82 @@
   (draw-sprite chip (register rx) (register ry) size))
 
 
+;;;; Sound --------------------------------------------------------------------
+(defconstant +pi+ (float pi 1.0))
+(defconstant +tau+ (* 2 +pi+))
+(defconstant +sample-rate+ 44100d0)
+(defconstant +audio-buffer-size+ 1024)
+(defconstant +audio-buffer-time+ (* +audio-buffer-size+ (/ +sample-rate+)))
+
+(deftype angle ()
+  `(single-float 0.0 ,+tau+))
+
+(deftype audio-buffer ()
+  `(simple-array single-float (,+audio-buffer-size+)))
+
+
+(declaim
+  (ftype (function (angle) (single-float -1.0 1.0))
+         square sine)
+  (ftype (function (audio-buffer function angle angle) angle)
+         fill-buffer)
+  (inline square sine fill-buffer))
+
+
+(defun make-audio-buffer ()
+  (make-simple-array 'single-float +audio-buffer-size+ :initial-element 0.0))
+
+
+(defun square (angle)
+  (declare (optimize (debug 0) (safety 0) (speed 3)))
+  (if (< angle +pi+)
+    1.0
+    -1.0))
+
+(defun sine (angle)
+  (declare (optimize (debug 0) (safety 0) (speed 3)))
+  (sin angle))
+
+
+(defun fill-buffer (buffer function rate start)
+  ; (declare (optimize (debug 0) (safety 0) (speed 3)))
+  (iterate
+    (declare (iterate::declare-variables))
+    (for (the fixnum i) :index-of-vector buffer)
+    (for (the angle angle) :first start :then (mod (+ angle rate) +tau+))
+    (setf (aref buffer i) (funcall function angle))
+    (finally (return angle))))
+
+(defun fill-square (buffer rate start)
+  (fill-buffer buffer #'square rate start))
+
+(defun fill-sine (buffer rate start)
+  (fill-buffer buffer #'sine rate start))
+
+
+(defun audio-rate (frequency)
+  (float (* (/ +tau+ +sample-rate+) frequency) 1.0))
+
+(defun run-sound (chip)
+  (portaudio:with-audio
+    (portaudio:with-default-audio-stream
+        (audio-stream 0 1
+                      :sample-format :float
+                      :sample-rate +sample-rate+
+                      :frames-per-buffer +audio-buffer-size+)
+      (with-chip (chip)
+        (iterate (with buffer = (make-audio-buffer))
+                 (with angle = 0.0)
+                 (with rate = (audio-rate 440))
+                 (while running)
+                 (if (and (plusp sound-timer)
+                          (not (debugger-paused-p debugger)))
+                   (progn
+                     (setf angle (fill-square buffer rate angle))
+                     (portaudio:write-stream audio-stream buffer))
+                   (sleep +audio-buffer-time+)))))))
+
+
 ;;;; Timers -------------------------------------------------------------------
 (declaim
   (ftype (function (chip) null) decrement-timers run-timers))
@@ -655,6 +731,7 @@
     (load-rom chip rom-filename)
     (bt:make-thread (curry #'run-cpu chip))
     (bt:make-thread (curry #'run-timers chip))
+    (bt:make-thread (curry #'run-sound chip))
     (chip8.gui::run-gui chip)))
 
 

@@ -149,14 +149,18 @@
   (cond
     ((<= row 15) (format nil "V~X" row))
     ((= row 16) "I")
-    ((= row 17) "PC")))
+    ((= row 17) "PC")
+    ((= row 18) "DT")
+    ((= row 19) "ST")))
 
 (defun registers-value (chip row)
   (cond
     ((<= row 15) (format nil "~2,'0X"
                          (aref (chip8::chip-registers chip) row)))
     ((= row 16) (format nil "~4,'0X" (chip8::chip-index chip)))
-    ((= row 17) (format nil "~3,'0X" (chip8::chip-program-counter chip)))))
+    ((= row 17) (format nil "~3,'0X" (chip8::chip-program-counter chip)))
+    ((= row 18) (format nil "~2,'0X" (chip8::chip-delay-timer chip)))
+    ((= row 19) (format nil "~2,'0X" (chip8::chip-sound-timer chip)))))
 
 
 ;;;; Model
@@ -170,12 +174,12 @@
 
 (define-override (registers-model row-count) (index)
   (declare (ignore index))
-  18)
+  20)
 
 
 (defun registers-index-valid-p (index)
   (and (q+:is-valid index)
-       (< (q+:row index) 18)))
+       (< (q+:row index) 20)))
 
 (define-override (registers-model data) (index role)
   (let ((row (q+:row index))

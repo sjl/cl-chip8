@@ -18,8 +18,6 @@
 (defconstant +screen-height+ 32)
 (defconstant +memory-size+ (* 1024 4))
 
-(defparameter *running* t)
-
 
 ;;;; Types --------------------------------------------------------------------
 (deftype int4 () '(unsigned-byte 4))
@@ -90,6 +88,7 @@
 
 
 (defstruct chip
+  (running t :type boolean)
   (memory (make-simple-array 'int8 4096)
           :type (basic-array int8 4096)
           :read-only t)
@@ -120,6 +119,7 @@
   (debugger (make-debugger) :type debugger :read-only t))
 
 (define-with-macro chip
+  running
   memory registers
   flag
   index program-counter
@@ -548,17 +548,17 @@
   nil)
 
 (defun run-timers (chip)
-  (iterate
-    (with debugger = (chip-debugger chip))
-    (while *running*)
-    (when (not (debugger-paused-p debugger))
-      (decrement-timers chip))
-    (sleep 1/60)))
+  (with-chip (chip)
+    (iterate
+      (while running)
+      (when (not (debugger-paused-p debugger))
+        (decrement-timers chip))
+      (sleep 1/60))))
 
 
 ;;;; CPU ----------------------------------------------------------------------
 (declaim
-  (ftype (function (chip) null) emulate-cycle)
+  (ftype (function (chip) null) run-cpu emulate-cycle)
   (ftype (function (chip int16) null) dispatch-instruction))
 
 (defparameter *c* nil)
@@ -573,7 +573,8 @@
     (load-font chip)
     (replace memory (read-file-into-byte-vector loaded-rom)
              :start1 #x200)
-    (setf video-dirty t
+    (setf running t
+          video-dirty t
           program-counter #x200
           delay-timer 0
           sound-timer 0
@@ -643,14 +644,14 @@
 
 (defun run-cpu (chip)
   (iterate
-    (while *running*)
+    (while (chip-running chip))
     (emulate-cycle chip)))
 
 
 ;;;; Main ---------------------------------------------------------------------
 (defun run (rom-filename)
   (let ((chip (make-chip)))
-    (setf *running* t *c* chip)
+    (setf *c* chip)
     (load-rom chip rom-filename)
     (bt:make-thread (curry #'run-cpu chip))
     (bt:make-thread (curry #'run-timers chip))

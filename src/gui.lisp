@@ -45,7 +45,7 @@
 
 
 (defun die (screen)
-  (setf chip8::*running* nil)
+  (setf (chip8::chip-running (screen-chip screen)) nil)
   (q+:close (screen-debugger screen))
   (q+:close screen))
 
@@ -65,7 +65,7 @@
 (define-slot (screen update) ()
   (declare (connected timer (timeout)))
 
-  (if chip8::*running*
+  (if (chip8::chip-running (screen-chip screen))
     (q+:repaint screen)
     (die screen)))
 

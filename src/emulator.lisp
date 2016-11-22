@@ -26,7 +26,6 @@
 (deftype int16 () '(unsigned-byte 16))
 (deftype x-coord () `(integer 0 (,+screen-width+)))
 (deftype y-coord () `(integer 0 (,+screen-height+)))
-(deftype memory-index () `(integer 0 (,+memory-size+)))
 
 (deftype basic-array (element-type size)
   `(simple-array ,(upgraded-array-element-type element-type) (,size)))
@@ -298,9 +297,7 @@
 
 ;;;; Graphics -----------------------------------------------------------------
 (declaim (inline font-location vref (setf vref))
-         (ftype (function (chip int8 int8 int4) null) draw-sprite)
-         (ftype (function (chip x-coord y-coord) fixnum) vref)
-         (ftype (function (fixnum chip x-coord y-coord) fixnum) (setf vref)))
+         (ftype (function (chip int8 int8 int4) null) draw-sprite))
 
 
 (defun vref (chip x y)
@@ -341,37 +338,30 @@
     (assert (< (+ index size) +memory-size+) (index)
       "Sprite data of size ~D starting at #x~4,'0X would be out of bounds"
       size index)
-    ; (format t "Drawing sprite at ~d ~d~%" start-x start-y)
     (setf flag 0)
     (iterate
-      (declare (iterate:declare-variables))
-      (for (the fixnum y) :from start-y :below (+ start-y size))
-      (for (the y-coord screen-y) = (mod y 32))
-      (for (the fixnum i) :from index)
+      (for y :from start-y :below (+ start-y size))
+      (for screen-y = (mod y +screen-height+))
+      (for i :from index)
       (for sprite = (aref memory i))
-      (iterate (declare (iterate:declare-variables))
-               (for (the fixnum x) :from start-x)
-               (for (the x-coord screen-x) = (mod x 64))
-               (for (the fixnum col) :from 7 :downto 0)
-               (for (the fixnum old-pixel) = (vref chip screen-x screen-y))
-               (for (the fixnum new-pixel) = (get-bit col sprite))
-               ; (when (= old-pixel new-pixel 1)
-               ;   (setf flag 1))
-               (when (and (plusp old-pixel) (plusp new-pixel))
+      (iterate (for x :from start-x)
+               (for screen-x = (mod x +screen-width+))
+               (for col :from 7 :downto 0)
+               (for old-pixel = (plusp (vref chip screen-x screen-y)))
+               (for new-pixel = (plusp (get-bit col sprite)))
+               (when (and old-pixel new-pixel)
                  (setf flag 1))
-               ; (setf (vref chip screen-x screen-y)
-               ;       (logxor old-pixel new-pixel))
                (setf (vref chip screen-x screen-y)
-                     (cond
-                       ((and (plusp old-pixel) (plusp new-pixel)) 0)
-                       ((or (plusp old-pixel) (plusp new-pixel)) 255)
-                       (t 0)))))
+                     (if (eql old-pixel new-pixel)
+                       0
+                       255))))
     (setf video-dirty t))
   nil)
 
 
 ;;;; Keyboard -----------------------------------------------------------------
-(declaim (ftype (function (chip (integer 0 (16)))) keydown keyup))
+(declaim
+  (ftype (function (chip (integer 0 (16)))) keydown keyup))
 
 (defun keydown (chip key)
   (setf (aref (chip-keys chip) key) t))
@@ -720,13 +710,10 @@
   (let ((chip (make-chip)))
     (setf *c* chip)
     (load-rom chip rom-filename)
-    (bt:make-thread (curry #'run-cpu chip))
-    (bt:make-thread (curry #'run-timers chip))
-    (bt:make-thread (curry #'run-sound chip))
-    (chip8.gui::run-gui chip)))
-
-
-;;;; Scratch ------------------------------------------------------------------
-
-; (-<> *c* chip-debugger debugger-callbacks-arrived
-;   (push (lambda (pc) (pr 'hello pc)) <>))
+    (chip8.gui::run-gui
+      chip
+      (lambda ()
+        ;; Really it's just the sound that needs to be here...
+        (bt:make-thread (curry #'run-cpu chip))
+        (bt:make-thread (curry #'run-timers chip))
+        (bt:make-thread (curry #'run-sound chip))))))

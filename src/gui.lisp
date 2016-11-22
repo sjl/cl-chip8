@@ -197,8 +197,9 @@
 
 
 ;;;; Main ---------------------------------------------------------------------
-(defun run-gui (chip)
+(defun run-gui (chip thunk)
   (with-main-window
-    (window (make-screen chip))))
+    (window (make-screen chip))
+    (funcall thunk)))
 
 

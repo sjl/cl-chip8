@@ -7,16 +7,18 @@
   :license "MIT/X11"
   :version "1.0.0"
 
-  :depends-on (:iterate
-               :losh
-               :cl-arrows
+  :depends-on (
                :bordeaux-threads
+               :cl-arrows
+               :cl-opengl
                :cl-portaudio
-               :qtools
+               :iterate
+               :losh
                :qtcore
                :qtgui
+               :qtools
                :qtopengl
-               :cl-opengl)
+               )
 
   :serial t
   :components ((:module "vendor" :serial t

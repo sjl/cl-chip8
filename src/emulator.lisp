@@ -14,6 +14,7 @@
 
 ;;;; Constants ----------------------------------------------------------------
 (defconstant +cycles-per-second+ 500)
+(defconstant +cycles-before-sleep+ 10)
 (defconstant +screen-width+ 64)
 (defconstant +screen-height+ 32)
 (defconstant +memory-size+ (* 1024 4))
@@ -35,7 +36,8 @@
 
 
 ;;;; Utils --------------------------------------------------------------------
-(declaim (inline not= +_8 -_8 chop cat-bytes get-bit bcd))
+(declaim
+  (inline not= +_8 -_8 chop cat-bytes get-bit bcd))
 
 (defun make-simple-array (element-type size &rest args)
   (apply #'make-array size
@@ -79,12 +81,14 @@
 
 
 ;;;; Data ---------------------------------------------------------------------
+(declaim
+  (inline chip-flag (setf chip-flag)))
+
 (defstruct debugger
   (paused nil :type boolean)
   (take-step nil :type boolean)
   (print-needed nil :type boolean)
   (callbacks-arrived nil :type list))
-
 
 (defstruct chip
   (running t :type boolean)
@@ -97,8 +101,8 @@
   (keys (make-simple-array 'boolean 16)
         :type (basic-array boolean 16)
         :read-only t)
-  (video (make-simple-array 'fixnum (* 32 64))
-         :type (basic-array fixnum #.(* 32 64))
+  (video (make-simple-array 'fixnum (* +screen-height+ +screen-width+))
+         :type (basic-array fixnum #.(* +screen-height+ +screen-width+))
          :read-only t)
   (video-dirty t :type boolean)
   (index 0 :type int16)
@@ -117,6 +121,7 @@
   (loaded-rom nil :type (or null string))
   (debugger (make-debugger) :type debugger :read-only t))
 
+
 (define-with-macro chip
   running
   memory registers
@@ -134,7 +139,6 @@
   paused take-step print-needed
   callbacks-arrived)
 
-(declaim (inline chip-flag (setf chip-flag)))
 
 (defun chip-flag (chip)
   (aref (chip-registers chip) #xF))
@@ -241,9 +245,8 @@
 
 
 ;;;; Debugger -----------------------------------------------------------------
-(declaim (ftype (function (debugger) boolean)
-                debugger-should-wait-p))
-
+(declaim
+  (ftype (function (debugger) boolean) debugger-should-wait-p))
 
 (defun debugger-pause (debugger)
   (with-debugger (debugger)
@@ -296,36 +299,37 @@
 
 
 ;;;; Graphics -----------------------------------------------------------------
-(declaim (inline font-location vref (setf vref))
-         (ftype (function (chip int8 int8 int4) null) draw-sprite))
+(declaim
+  (inline font-location vref (setf vref))
+  (ftype (function (chip int8 int8 int4) null) draw-sprite))
 
 
 (defun vref (chip x y)
-  (aref (chip-video chip) (+ (* 64 y) x)))
+  (aref (chip-video chip) (+ (* +screen-width+ y) x)))
 
 (defun (setf vref) (new-value chip x y)
-  (setf (aref (chip-video chip) (+ (* 64 y) x))
+  (setf (aref (chip-video chip) (+ (* +screen-width+ y) x))
         new-value))
 
 
 (defun load-font (chip)
   ;; Thanks http://www.multigesture.net/articles/how-to-write-an-emulator-chip-8-interpreter/
   (replace (chip-memory chip)
-           (vector #xF0 #x90 #x90 #x90 #xF0 ; 0
-                   #x20 #x60 #x20 #x20 #x70 ; 1
-                   #xF0 #x10 #xF0 #x80 #xF0 ; 2
-                   #xF0 #x10 #xF0 #x10 #xF0 ; 3
-                   #x90 #x90 #xF0 #x10 #x10 ; 4
-                   #xF0 #x80 #xF0 #x10 #xF0 ; 5
-                   #xF0 #x80 #xF0 #x90 #xF0 ; 6
-                   #xF0 #x10 #x20 #x40 #x40 ; 7
-                   #xF0 #x90 #xF0 #x90 #xF0 ; 8
-                   #xF0 #x90 #xF0 #x10 #xF0 ; 9
-                   #xF0 #x90 #xF0 #x90 #x90 ; A
-                   #xE0 #x90 #xE0 #x90 #xE0 ; B
-                   #xF0 #x80 #x80 #x80 #xF0 ; C
-                   #xE0 #x90 #x90 #x90 #xE0 ; D
-                   #xF0 #x80 #xF0 #x80 #xF0 ; E
+           (vector #xF0 #x90 #x90 #x90 #xF0  ; 0
+                   #x20 #x60 #x20 #x20 #x70  ; 1
+                   #xF0 #x10 #xF0 #x80 #xF0  ; 2
+                   #xF0 #x10 #xF0 #x10 #xF0  ; 3
+                   #x90 #x90 #xF0 #x10 #x10  ; 4
+                   #xF0 #x80 #xF0 #x10 #xF0  ; 5
+                   #xF0 #x80 #xF0 #x90 #xF0  ; 6
+                   #xF0 #x10 #x20 #x40 #x40  ; 7
+                   #xF0 #x90 #xF0 #x90 #xF0  ; 8
+                   #xF0 #x90 #xF0 #x10 #xF0  ; 9
+                   #xF0 #x90 #xF0 #x90 #x90  ; A
+                   #xE0 #x90 #xE0 #x90 #xE0  ; B
+                   #xF0 #x80 #x80 #x80 #xF0  ; C
+                   #xE0 #x90 #x90 #x90 #xE0  ; D
+                   #xF0 #x80 #xF0 #x80 #xF0  ; E
                    #xF0 #x80 #xF0 #x80 #x80) ; F
            :start1 #x50))
 
@@ -340,21 +344,18 @@
       size index)
     (setf flag 0)
     (iterate
-      (for y :from start-y :below (+ start-y size))
-      (for screen-y = (mod y +screen-height+))
+      (repeat size)
       (for i :from index)
       (for sprite = (aref memory i))
-      (iterate (for x :from start-x)
-               (for screen-x = (mod x +screen-width+))
+      (for y :modulo +screen-height+ :from start-y)
+      (iterate (for x :modulo +screen-width+ :from start-x)
                (for col :from 7 :downto 0)
-               (for old-pixel = (plusp (vref chip screen-x screen-y)))
+               (for old-pixel = (plusp (vref chip x y)))
                (for new-pixel = (plusp (get-bit col sprite)))
                (when (and old-pixel new-pixel)
                  (setf flag 1))
-               (setf (vref chip screen-x screen-y)
-                     (if (eql old-pixel new-pixel)
-                       0
-                       255))))
+               (setf (vref chip x y)
+                     (if (xor old-pixel new-pixel) 255 0))))
     (setf video-dirty t))
   nil)
 
@@ -695,14 +696,15 @@
       (let ((instruction (cat-bytes (aref memory program-counter)
                                     (aref memory (1+ program-counter)))))
         (zapf program-counter (chop 12 (+ % 2)))
-        (dispatch-instruction chip instruction)
-        (sleep (/ 1 +cycles-per-second+))))
+        (dispatch-instruction chip instruction)))
     nil))
 
 (defun run-cpu (chip)
   (iterate
     (while (chip-running chip))
-    (emulate-cycle chip)))
+    (emulate-cycle chip)
+    (for tick :every-nth +cycles-before-sleep+ :do
+         (sleep (/ +cycles-before-sleep+ +cycles-per-second+)))))
 
 
 ;;;; Main ---------------------------------------------------------------------

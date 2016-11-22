@@ -14,6 +14,7 @@
                :read-file-into-byte-vector
                :symb
                :with-gensyms
+               :xor
 
                )
   :package "CHIP8.QUICKUTILS")

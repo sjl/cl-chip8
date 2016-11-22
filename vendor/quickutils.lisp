@@ -2,7 +2,7 @@
 ;;;; See http://quickutil.org for details.
 
 ;;;; To regenerate:
-;;;; (qtlc:save-utils-as "quickutils.lisp" :utilities '(:COMPOSE :CURRY :ENSURE-BOOLEAN :ENSURE-GETHASH :ENSURE-LIST :ONCE-ONLY :RCURRY :READ-FILE-INTO-BYTE-VECTOR :SYMB :WITH-GENSYMS) :ensure-package T :package "CHIP8.QUICKUTILS")
+;;;; (qtlc:save-utils-as "quickutils.lisp" :utilities '(:COMPOSE :CURRY :ENSURE-BOOLEAN :ENSURE-GETHASH :ENSURE-LIST :ONCE-ONLY :RCURRY :READ-FILE-INTO-BYTE-VECTOR :SYMB :WITH-GENSYMS :XOR) :ensure-package T :package "CHIP8.QUICKUTILS")
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (unless (find-package "CHIP8.QUICKUTILS")
@@ -19,7 +19,8 @@
                                          :ONCE-ONLY :RCURRY :WITH-OPEN-FILE*
                                          :WITH-INPUT-FROM-FILE
                                          :READ-FILE-INTO-BYTE-VECTOR :MKSTR
-                                         :SYMB :STRING-DESIGNATOR :WITH-GENSYMS))))
+                                         :SYMB :STRING-DESIGNATOR :WITH-GENSYMS
+                                         :XOR))))
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defun make-gensym-list (length &optional (x "G"))
     "Returns a list of `length` gensyms, each generated as if with a call to `make-gensym`,
@@ -270,9 +271,29 @@ The string-designator is used as the argument to `gensym` when constructing the
 unique symbol the named variable will be bound to."
     `(with-gensyms ,names ,@forms))
   
+
+  (defmacro xor (&rest datums)
+    "Evaluates its arguments one at a time, from left to right. If more then one
+argument evaluates to a true value no further `datums` are evaluated, and `nil` is
+returned as both primary and secondary value. If exactly one argument
+evaluates to true, its value is returned as the primary value after all the
+arguments have been evaluated, and `t` is returned as the secondary value. If no
+arguments evaluate to true `nil` is retuned as primary, and `t` as secondary
+value."
+    (with-gensyms (xor tmp true)
+      `(let (,tmp ,true)
+         (block ,xor
+           ,@(mapcar (lambda (datum)
+                       `(if (setf ,tmp ,datum)
+                            (if ,true
+                                (return-from ,xor (values nil nil))
+                                (setf ,true ,tmp))))
+                     datums)
+           (return-from ,xor (values ,true t))))))
+  
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (export '(compose curry ensure-boolean ensure-gethash ensure-list once-only
             rcurry read-file-into-byte-vector symb with-gensyms
-            with-unique-names)))
+            with-unique-names xor)))
 
 ;;;; END OF quickutils.lisp ;;;;

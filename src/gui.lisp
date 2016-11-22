@@ -10,7 +10,6 @@
 (defparameter *fps* 60)
 
 
-
 ;;;; Data ---------------------------------------------------------------------
 (defstruct gui chip screen)
 
@@ -22,7 +21,7 @@
 
     (gl:tex-image-2d :texture-2d 0 :luminance size size 0 :luminance
                      :unsigned-byte (cffi:null-pointer))
-    (gl:tex-parameter :texture-2d :texture-min-filter :nearest) ; sharp pixels or gtfo
+    (gl:tex-parameter :texture-2d :texture-min-filter :nearest)
     (gl:tex-parameter :texture-2d :texture-mag-filter :nearest)
     (gl:enable :texture-2d)
 
@@ -79,7 +78,7 @@
   (gl:bind-texture :texture-2d (screen-texture screen))
 
   (let ((chip (screen-chip screen)))
-    (when t ; (chip8::chip-video-dirty chip)
+    (when (chip8::chip-video-dirty chip)
       (setf (chip8::chip-video-dirty chip) nil)
       (gl:tex-sub-image-2d :texture-2d 0 0 0 64 32 :luminance :unsigned-byte
                            (chip8::chip-video chip))))
@@ -177,8 +176,7 @@
   (let* ((key (q+:key ev))
          (pad-key (pad-key-for key)))
     (if pad-key
-      (when pad-key
-        (chip8::keyup chip pad-key))
+      (chip8::keyup chip pad-key)
       (qtenumcase key
         ((q+:qt.key_escape)
          (die screen))
@@ -192,7 +190,7 @@
         ((q+:qt.key_f7)
          (-> chip chip8::chip-debugger chip8::debugger-step))
 
-        (t (pr "Unknown key pressed" (format nil "~X" key))))))
+        (t (pr :unknown-key (format nil "~X" key))))))
   (stop-overriding))
 
 

@@ -12,6 +12,7 @@
                :once-only
                :rcurry
                :read-file-into-byte-vector
+               :removef
                :symb
                :with-gensyms
                :xor

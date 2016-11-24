@@ -2,7 +2,7 @@
 ;;;; See http://quickutil.org for details.
 
 ;;;; To regenerate:
-;;;; (qtlc:save-utils-as "quickutils.lisp" :utilities '(:COMPOSE :CURRY :ENSURE-BOOLEAN :ENSURE-GETHASH :ENSURE-LIST :ONCE-ONLY :RCURRY :READ-FILE-INTO-BYTE-VECTOR :SYMB :WITH-GENSYMS :XOR) :ensure-package T :package "CHIP8.QUICKUTILS")
+;;;; (qtlc:save-utils-as "quickutils.lisp" :utilities '(:COMPOSE :CURRY :ENSURE-BOOLEAN :ENSURE-GETHASH :ENSURE-LIST :ONCE-ONLY :RCURRY :READ-FILE-INTO-BYTE-VECTOR :REMOVEF :SYMB :WITH-GENSYMS :XOR) :ensure-package T :package "CHIP8.QUICKUTILS")
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (unless (find-package "CHIP8.QUICKUTILS")
@@ -18,9 +18,9 @@
                                          :ENSURE-GETHASH :ENSURE-LIST
                                          :ONCE-ONLY :RCURRY :WITH-OPEN-FILE*
                                          :WITH-INPUT-FROM-FILE
-                                         :READ-FILE-INTO-BYTE-VECTOR :MKSTR
-                                         :SYMB :STRING-DESIGNATOR :WITH-GENSYMS
-                                         :XOR))))
+                                         :READ-FILE-INTO-BYTE-VECTOR :REMOVEF
+                                         :MKSTR :SYMB :STRING-DESIGNATOR
+                                         :WITH-GENSYMS :XOR))))
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defun make-gensym-list (length &optional (x "G"))
     "Returns a list of `length` gensyms, each generated as if with a call to `make-gensym`,
@@ -211,6 +211,16 @@ which is only sent to `with-open-file` when it's not `nil`."
           result))))
   
 
+  (declaim (inline remove/swapped-arguments))
+  (defun remove/swapped-arguments (sequence item &rest keyword-arguments)
+    (apply #'remove item sequence keyword-arguments))
+
+  (define-modify-macro removef (item &rest remove-keywords)
+    remove/swapped-arguments
+    "Modify-macro for `remove`. Sets place designated by the first argument to
+the result of calling `remove` with `item`, place, and the `keyword-arguments`.")
+  
+
   (defun mkstr (&rest args)
     "Receives any number of objects (string, symbol, keyword, char, number), extracts all printed representations, and concatenates them all into one string.
 
@@ -293,7 +303,7 @@ value."
   
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (export '(compose curry ensure-boolean ensure-gethash ensure-list once-only
-            rcurry read-file-into-byte-vector symb with-gensyms
+            rcurry read-file-into-byte-vector removef symb with-gensyms
             with-unique-names xor)))
 
 ;;;; END OF quickutils.lisp ;;;;

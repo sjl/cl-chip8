@@ -88,7 +88,8 @@
   (paused nil :type boolean)
   (take-step nil :type boolean)
   (print-needed nil :type boolean)
-  (callbacks-arrived nil :type list))
+  (callbacks-arrived nil :type list)
+  (breakpoints nil :type list))
 
 (defstruct chip
   (running t :type boolean)
@@ -248,9 +249,6 @@
 
 
 ;;;; Debugger -----------------------------------------------------------------
-(declaim
-  (ftype (function (debugger) boolean) debugger-should-wait-p))
-
 (defun debugger-pause (debugger)
   (with-debugger (debugger)
     (setf paused t print-needed t)))
@@ -286,15 +284,30 @@
 (defun debugger-paused-p (debugger)
   (debugger-paused debugger))
 
-(defun debugger-should-wait-p (debugger)
+(defun debugger-check-breakpoints (debugger address)
+  (let ((result (member address (debugger-breakpoints debugger))))
+    (if result
+      (progn (debugger-pause debugger)
+             t)
+      nil)))
+
+(defun debugger-should-wait-p (debugger address)
   (with-debugger (debugger)
-    (if (not paused) ; if we're not paused, we never need to wait
-      nil
+    (if (not paused)
+      ;; If we're not paused, we just need to check for breakpoints
+      (debugger-check-breakpoints debugger address)
+      ;; Otherwise we're paused
       (if take-step
         (progn (setf take-step nil ; if we're paused, but are ready to step, go
                      print-needed t)
                nil)
         t)))) ; otherwise we're fully paused -- wait
+
+(defun debugger-add-breakpoint (debugger address)
+  (pushnew address (debugger-breakpoints debugger)))
+
+(defun debugger-remove-breakpoint (debugger address)
+  (removef (debugger-breakpoints debugger) address))
 
 (defun debugger-add-callback-arrived (debugger function)
   (push function (debugger-callbacks-arrived debugger))
@@ -694,7 +707,7 @@
 (defun emulate-cycle (chip)
   (with-chip (chip)
     (debugger-print debugger chip)
-    (if (debugger-should-wait-p debugger)
+    (if (debugger-should-wait-p debugger program-counter)
       (sleep 10/1000)
       (let ((instruction (cat-bytes (aref memory program-counter)
                                     (aref memory (1+ program-counter)))))

@@ -210,11 +210,14 @@
                     :result-type 'string)))
 
 (defun retrieve-instruction (array index)
-  (chip8::cat-bytes (aref array index)
-                    ;; ugly hack to handle odd-sized roms
-                    (if (< (1+ index) (length array))
-                      (aref array (1+ index))
-                      0)))
+  (chip8::cat-bytes
+    ;; ugly hacks to handle odd parity
+    (if (minusp index)
+      0
+      (aref array index))
+    (if (< (1+ index) (length array))
+      (aref array (1+ index))
+      0)))
 
 (defun instruction-information (array index)
   (let ((instruction (retrieve-instruction array index)))
@@ -708,10 +711,12 @@
 
 
 ;;;; Main ---------------------------------------------------------------------
-(defun run (rom-filename)
+(defun run (rom-filename &key start-paused)
   (let ((chip (make-chip)))
     (setf *c* chip)
     (load-rom chip rom-filename)
+    (when start-paused
+      (debugger-pause (chip-debugger chip)))
     (chip8.gui::run-gui
       chip
       (lambda ()

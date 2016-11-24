@@ -24,6 +24,11 @@
 (defun model-index (model row col)
   (q+:index model row col (q+:make-qmodelindex)))
 
+(defun data-changed! (model index-from &optional (index-to index-from))
+  (signal! model (data-changed "QModelIndex" "QModelIndex")
+           index-from
+           index-to))
+
 
 ;;;; Disassembler -------------------------------------------------------------
 ;;;; Code
@@ -36,19 +41,33 @@
 ;;;; Model
 (define-widget disassembly-model (QAbstractTableModel)
   ((chip :initarg :chip)
+   (parity :initform 0)
    (current-address :initform 0)))
+
+
+(defun disassembly-model-address-to-row (model address)
+  (-<> address
+    (+ <> (slot-value model 'parity))
+    (truncate <> 2)
+    (values <>)))
+
 
 (defun disassembly-model-update-current-address (model new-address)
   (let* ((old-address (slot-value model 'current-address))
-         (old-row (floor old-address 2))
-         (new-row (floor new-address 2)))
+         (old-row (disassembly-model-address-to-row model old-address))
+         (new-row (disassembly-model-address-to-row model new-address)))
     (setf (slot-value model 'current-address) new-address)
-    (signal! model (data-changed "QModelIndex" "QModelIndex")
-             (model-index model old-row 0)
-             (model-index model old-row 3))
-    (signal! model (data-changed "QModelIndex" "QModelIndex")
-             (model-index model new-row 0)
-             (model-index model new-row 3))))
+    (data-changed! model
+                   (model-index model old-row 0)
+                   (model-index model old-row 3))
+    (data-changed! model
+                   (model-index model new-row 0)
+                   (model-index model new-row 3))))
+
+(defun disassembly-model-toggle-parity (model)
+  (zapf (slot-value model 'parity) (if (zerop %) 1 0))
+  (signal! model (layout-changed)))
+
 
 (define-override (disassembly-model column-count) (index)
   (declare (ignore index))
@@ -56,7 +75,7 @@
 
 (define-override (disassembly-model row-count) (index)
   (declare (ignore index))
-  (ceiling 4096 2))
+  (+ parity (ceiling 4096 2)))
 
 
 (defun disassembly-index-valid-p (index)
@@ -66,7 +85,8 @@
 (defun get-disassembly-contents (model row col)
   (let ((data (-<> model
                 (slot-value <> 'chip)
-                (disassemble-address <> (* 2 row))
+                (disassemble-address <> (- (* 2 row)
+                                           (slot-value model 'parity)))
                 (nth col <>))))
     (ecase col
       (0 (format nil "~3,'0X" data))
@@ -89,7 +109,8 @@
         ((q+:qt.font-role) *font*)
 
         ((q+:qt.background-role)
-         (if (= row (floor current-address 2))
+         (if (= row (disassembly-model-address-to-row disassembly-model
+                                                      current-address))
            *current-instruction-brush*
            (q+:make-qvariant)))
 
@@ -118,7 +139,7 @@
   (disassembly-model-update-current-address model address)
   (-<> address
     ;; raw address -> row number
-    (floor <> 2)
+    (disassembly-model-address-to-row model <>)
     ;; Give ourselves a bit of breathing room at the top of the table
     (- <> 4)
     (max <> 0)
@@ -127,7 +148,8 @@
     ;; make the debugger show the current line
     (q+:scroll-to view <> (q+:qabstractitemview.position-at-top))))
 
-(define-subwidget (debugger disassembly-table) (q+:make-qtableview debugger)
+(define-subwidget (debugger disassembly-table)
+    (q+:make-qtableview debugger)
   (chip8::debugger-add-callback-arrived
     chip-debugger ; bit of a fustercluck here...
     (curry #'disassembly-update-address model-disassembly disassembly-table))
@@ -141,6 +163,14 @@
     (q+:hide vheader)
     (q+:set-resize-mode vheader (q+:qheaderview.fixed))
     (q+:set-default-section-size vheader 14)))
+
+(define-subwidget (debugger disassembly-parity-button)
+    (q+:make-qpushbutton "Flip Parity" debugger))
+
+(define-slot (debugger disassembly-toggle-parity) ()
+  (declare (connected disassembly-parity-button (pressed)))
+  (disassembly-model-toggle-parity model-disassembly))
+
 
 
 ;;;; Register Viewer ----------------------------------------------------------
@@ -250,8 +280,7 @@
            (val (parse-hex value (registers-max-value row))))
       (when val
         (setf (registers-value chip row) val)
-        (signal! registers-model (data-changed "QModelIndex" "QModelIndex")
-                 index index))
+        (data-changed! registers-model index))
       t)
     nil))
 
@@ -341,6 +370,7 @@
 (define-subwidget (debugger layout) (q+:make-qhboxlayout debugger)
   (let ((disassembly (q+:make-qvboxlayout)))
     (q+:add-widget disassembly disassembly-table)
+    (q+:add-widget disassembly disassembly-parity-button)
     (q+:add-layout layout disassembly))
   (let ((values (q+:make-qvboxlayout)))
     (q+:set-fixed-width registers-table 90)

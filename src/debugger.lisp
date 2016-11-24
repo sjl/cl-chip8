@@ -145,22 +145,48 @@
 
 ;;;; Register Viewer ----------------------------------------------------------
 ;;;; Code
+(defmacro register-case (row &key
+                         register index program-counter delay-timer sound-timer)
+  (once-only (row)
+    `(cond
+      ((<= ,row 15) ,register)
+      ((= ,row 16) ,index)
+      ((= ,row 17) ,program-counter)
+      ((= ,row 18) ,delay-timer)
+      ((= ,row 19) ,sound-timer)
+      (t (error "Bad register row ~D" ,row)))))
+
 (defun registers-label (row)
-  (cond
-    ((<= row 15) (format nil "V~X" row))
-    ((= row 16) "I")
-    ((= row 17) "PC")
-    ((= row 18) "DT")
-    ((= row 19) "ST")))
+  (register-case row
+    :register        (format nil "V~X" row)
+    :index           "I"
+    :program-counter "PC"
+    :delay-timer     "DT"
+    :sound-timer     "ST"))
 
 (defun registers-value (chip row)
-  (cond
-    ((<= row 15) (format nil "~2,'0X"
-                         (aref (chip8::chip-registers chip) row)))
-    ((= row 16) (format nil "~4,'0X" (chip8::chip-index chip)))
-    ((= row 17) (format nil "~3,'0X" (chip8::chip-program-counter chip)))
-    ((= row 18) (format nil "~2,'0X" (chip8::chip-delay-timer chip)))
-    ((= row 19) (format nil "~2,'0X" (chip8::chip-sound-timer chip)))))
+  (register-case row
+    :register        (format nil "~2,'0X" (aref (chip8::chip-registers chip) row))
+    :index           (format nil "~4,'0X" (chip8::chip-index chip))
+    :program-counter (format nil "~3,'0X" (chip8::chip-program-counter chip))
+    :delay-timer     (format nil "~2,'0X" (chip8::chip-delay-timer chip))
+    :sound-timer     (format nil "~2,'0X" (chip8::chip-sound-timer chip))))
+
+(defun (setf registers-value) (new-value chip row)
+  (register-case row
+    :register        (setf (aref (chip8::chip-registers chip) row) new-value)
+    :index           (setf (chip8::chip-index chip) new-value)
+    :program-counter (setf (chip8::chip-program-counter chip) new-value)
+    :delay-timer     (setf (chip8::chip-delay-timer chip) new-value)
+    :sound-timer     (setf (chip8::chip-sound-timer chip) new-value)))
+
+(defun registers-max-value (row)
+  (register-case row
+    :register        #xFF
+    :index           #xFFFF
+    :program-counter #xFFF
+    :delay-timer     #xFF
+    :sound-timer     #xFF))
 
 
 ;;;; Model
@@ -198,6 +224,36 @@
 (define-override (registers-model header-data) (section orientation role)
   (declare (ignore section orientation role))
   (q+:make-qvariant))
+
+(define-override (registers-model flags) (index)
+  ;; The register data column should be editable.
+  (let ((base (call-next-qmethod index)))
+    (cond
+      ((not (registers-index-valid-p index))
+       (q+:qt.item-is-enabled))
+      ((= (q+:column index) 1)
+       (logior base (q+:qt.item-is-editable)))
+      (t base))))
+
+
+(defun parse-hex (string max)
+  (let ((value (handler-case (parse-integer string :radix 16)
+                 (error () nil))))
+    (if (and value (<= value max))
+      value
+      nil)))
+
+(define-override (registers-model set-data) (index value role)
+  (if (and (registers-index-valid-p index)
+           (eql role (q+:qt.edit-role)))
+    (let ((row (q+:row index)))
+      (setf (registers-value chip row)
+            (parse-hex value (registers-max-value row)))
+      (signal! registers-model (data-changed "QModelIndex" "QModelIndex")
+               index index)
+      t)
+    nil))
+
 
 
 ;;;; Layout

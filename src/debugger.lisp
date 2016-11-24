@@ -246,14 +246,14 @@
 (define-override (registers-model set-data) (index value role)
   (if (and (registers-index-valid-p index)
            (eql role (q+:qt.edit-role)))
-    (let ((row (q+:row index)))
-      (setf (registers-value chip row)
-            (parse-hex value (registers-max-value row)))
-      (signal! registers-model (data-changed "QModelIndex" "QModelIndex")
-               index index)
+    (let* ((row (q+:row index))
+           (val (parse-hex value (registers-max-value row))))
+      (when val
+        (setf (registers-value chip row) val)
+        (signal! registers-model (data-changed "QModelIndex" "QModelIndex")
+                 index index))
       t)
     nil))
-
 
 
 ;;;; Layout

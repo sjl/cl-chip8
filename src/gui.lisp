@@ -164,6 +164,39 @@
     ((= code (q+:qt.key_3)) #xB)
     ((= code (q+:qt.key_0)) #xF)))
 
+(defun pad-key-for (code)
+  ;; Original Chip-8 Pad → Laptop
+  ;; ┌─┬─┬─┬─┐             ┌─┬─┬─┬─┐
+  ;; │1│2│3│C│             │1│2│3│4│
+  ;; ├─┼─┼─┼─┤             ├─┼─┼─┼─┤
+  ;; │4│5│6│D│             │Q│W│E│R│
+  ;; ├─┼─┼─┼─┤             ├─┼─┼─┼─┤
+  ;; │7│8│9│E│             │A│S│D│F│
+  ;; ├─┼─┼─┼─┤             ├─┼─┼─┼─┤
+  ;; │A│0│B│F│             │Z│X│C│V│
+  ;; └─┴─┴─┴─┘             └─┴─┴─┴─┘
+  ;;
+  (cond
+    ((= code (q+:qt.key_1)) #x1)
+    ((= code (q+:qt.key_2)) #x2)
+    ((= code (q+:qt.key_3)) #x3)
+    ((= code (q+:qt.key_4)) #xC)
+
+    ((= code (q+:qt.key_q)) #x4)
+    ((= code (q+:qt.key_w)) #x5)
+    ((= code (q+:qt.key_e)) #x6)
+    ((= code (q+:qt.key_r)) #xD)
+
+    ((= code (q+:qt.key_a)) #x7)
+    ((= code (q+:qt.key_s)) #x8)
+    ((= code (q+:qt.key_d)) #x9)
+    ((= code (q+:qt.key_f)) #xE)
+
+    ((= code (q+:qt.key_z)) #xA)
+    ((= code (q+:qt.key_x)) #x0)
+    ((= code (q+:qt.key_c)) #xB)
+    ((= code (q+:qt.key_v)) #xF)))
+
 
 (define-override (screen key-press-event) (ev)
   (let* ((key (q+:key ev))
@@ -184,7 +217,7 @@
         ((q+:qt.key_space)
          (-> chip chip8::chip-debugger chip8::debugger-toggle-pause))
 
-        ((q+:qt.key_r)
+        ((q+:qt.key_f1)
          (-> chip chip8::reset))
 
         ((q+:qt.key_f7)

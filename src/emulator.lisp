@@ -2,6 +2,7 @@
 
 (setf *print-length* 16)
 (setf *print-base* 10)
+
 (declaim (optimize (speed 1) (safety 3) (debug 3)))
 (declaim (optimize (speed 3) (safety 1) (debug 3)))
 
@@ -13,7 +14,7 @@
 
 
 ;;;; Constants ----------------------------------------------------------------
-(defconstant +cycles-per-second+ 500)
+(defconstant +cycles-per-second+ 1000)
 (defconstant +cycles-before-sleep+ 10)
 (defconstant +screen-width+ 64)
 (defconstant +screen-height+ 32)
@@ -445,10 +446,13 @@
 (define-opcode op-ret ()                                ;; RET
   (setf program-counter (vector-pop stack)))
 
+(define-opcode op-add-reg<imm (_ r (immediate 2))       ;; ADD Vx, Imm
+  ;; For some weird reason the ADD immediate op doesn't set the flag
+  (zapf (register r) (+_8 % immediate)))
+
 (macro-map                                              ;; ADD/SUB (8-bit)
   ((name op source-arg source-expr)
-   ((op-add-reg<imm +_8 (immediate 2) immediate)
-    (op-add-reg<reg +_8 (ry 1) (register ry))
+   ((op-add-reg<reg +_8 (ry 1) (register ry))
     (op-sub-reg<reg -_8 (ry 1) (register ry))))
   `(define-opcode ,name (_ rx ,source-arg)
     (multiple-value-bind (result carry)
@@ -737,3 +741,5 @@
         (bt:make-thread (curry #'run-cpu chip))
         (bt:make-thread (curry #'run-timers chip))
         (bt:make-thread (curry #'run-sound chip))))))
+
+; (run "roms/blitz.rom")

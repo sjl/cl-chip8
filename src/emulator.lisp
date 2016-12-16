@@ -1,20 +1,9 @@
 (in-package :chip8)
-
-(setf *print-length* 16)
-(setf *print-base* 10)
-
 (declaim (optimize (speed 1) (safety 3) (debug 3)))
-(declaim (optimize (speed 3) (safety 1) (debug 3)))
-
-
-;;;; Reference ----------------------------------------------------------------
-;;; http://devernay.free.fr/hacks/chip8/C8TECH10.HTM
-;;; http://mattmik.com/files/chip8/mastering/chip8.html
-;;; https://github.com/AfBu/haxe-chip-8-emulator/wiki/(Super)CHIP-8-Secrets
 
 
 ;;;; Constants ----------------------------------------------------------------
-(defconstant +cycles-per-second+ 300)
+(defconstant +cycles-per-second+ 500)
 (defconstant +cycles-before-sleep+ 10)
 (defconstant +screen-width+ 64)
 (defconstant +screen-height+ 32)
@@ -29,32 +18,37 @@
 
 
 ;;;; Utils --------------------------------------------------------------------
-(declaim
-  (inline not= +_8 -_8 chop cat-bytes get-bit bcd))
-
-(defun not= (x y)
+(defun-inline not= (x y)
   (not (= x y)))
 
-(defun chop (size integer)
+(defun-inline chop (size integer)
   (ldb (byte size 0) integer))
 
-(defun cat-bytes (high-order low-order)
+(defun-inline cat-bytes (high-order low-order)
   (dpb high-order (byte 8 8) low-order))
 
-(defun get-bit (position integer)
+(defun-inline get-bit (position integer)
   (ldb (byte 1 position) integer))
 
-(defun +_8 (x y)
+(defun-inline +_8 (x y)
   (let ((result (+ x y)))
     (values (chop 8 result)
             (if (> result 255) 1 0))))
 
-(defun -_8 (x y)
+(defun-inline -_8 (x y)
   (let ((result (- x y)))
     (values (chop 8 result)
             (if (> x y) 1 0))))
 
-(defun bcd (integer)
+(defun-inline >>_8 (v)
+  (values (ash v -1)
+          (get-bit 0 v)))
+
+(defun-inline <<_8 (v)
+  (values (chop 8 (ash v 1))
+          (get-bit 7 v)))
+
+(defun-inline bcd (integer)
   (values (-<> integer (floor <> 100) (mod <> 10))
           (-<> integer (floor <> 10) (mod <> 10))
           (-<> integer (floor <> 1) (mod <> 10))))
@@ -67,9 +61,6 @@
 
 
 ;;;; Data ---------------------------------------------------------------------
-(declaim
-  (inline chip-flag (setf chip-flag)))
-
 (defstruct chip
   (running t :type boolean)
   (memory (make-array +memory-size+ :element-type 'int8)
@@ -80,21 +71,20 @@
              :read-only t)
   (index 0 :type int16)
   (program-counter #x200 :type int12)
-  (keys (make-array 16 :element-type 'boolean)
+  (keys (make-array 16 :element-type 'boolean :initial-element nil)
         :type (simple-array boolean (16))
         :read-only t)
   (video (make-array (* +screen-height+ +screen-width+) :element-type 'fixnum)
          :type (simple-array fixnum (#.(* +screen-height+ +screen-width+)))
          :read-only t)
   (video-dirty t :type boolean)
-  (delay-timer 0 :type int8)
-  (sound-timer 0 :type int8)
+  (delay-timer 0 :type fixnum)
+  (sound-timer 0 :type fixnum)
   (stack (make-array 16 :element-type 'int12 :fill-pointer 0)
          :type (vector int12 16)
          :read-only t)
   (loaded-rom nil :type (or null string))
   (debugger (make-debugger) :type debugger :read-only t))
-
 
 (define-with-macro chip
   running
@@ -108,23 +98,22 @@
   debugger)
 
 
-(defun chip-flag (chip)
+(defun-inline chip-flag (chip)
   (aref (chip-registers chip) #xF))
 
-(defun (setf chip-flag) (new-value chip)
+(defun-inline (setf chip-flag) (new-value chip)
   (setf (aref (chip-registers chip) #xF) new-value))
 
 
 ;;;; Graphics -----------------------------------------------------------------
 (declaim
-  (inline font-location vref (setf vref))
   (ftype (function (chip int8 int8 int4) null) draw-sprite))
 
 
-(defun vref (chip x y)
+(defun-inline vref (chip x y)
   (aref (chip-video chip) (+ (* +screen-width+ y) x)))
 
-(defun (setf vref) (new-value chip x y)
+(defun-inline (setf vref) (new-value chip x y)
   (setf (aref (chip-video chip) (+ (* +screen-width+ y) x))
         new-value))
 
@@ -150,7 +139,7 @@
                    #xF0 #x80 #xF0 #x80 #x80) ; F
            :start1 #x50))
 
-(defun font-location (character)
+(defun-inline font-location (character)
   (+ #x50 (* character 5)))
 
 
@@ -218,8 +207,8 @@
         nil))))
 
 
-(macro-map                                              ;; LD ...
-    ((name arglist destination source)
+(macro-map                                              ;; LD
+    ((NAME           ARGLIST         DESTINATION   SOURCE)
      ((op-ld-i<imm   (_ (value 3))   index         value)
       (op-ld-reg<imm (_ r (value 2)) (register r)  value)
       (op-ld-reg<reg (_ rx ry _)     (register rx) (register ry))
@@ -250,27 +239,24 @@
   ;; For some weird reason the ADD immediate op doesn't set the flag
   (zapf (register r) (+_8 % immediate)))
 
-(macro-map                                              ;; ADD/SUB (8-bit)
-  ((name op source-arg source-expr)
-   ((op-add-reg<reg +_8 (ry 1) (register ry))
-    (op-sub-reg<reg -_8 (ry 1) (register ry))))
-  `(define-opcode ,name (_ rx ,source-arg)
-    (multiple-value-bind (result carry)
-        (,op (register rx) ,source-expr)
-      (setf (register rx) result
-            flag carry))))
+(define-opcode op-add-reg<reg (_ rx ry)                 ;; ADD Vx, Vy (8-bit)
+    (setf (values (register rx) flag)
+          (+_8 (register rx) (register ry))))
+
+(define-opcode op-sub-reg<reg (_ rx ry)                 ;; SUB Vx, Vy (8-bit)
+  (setf (values (register rx) flag)
+        (-_8 (register rx) (register ry))))
 
 (define-opcode op-add-index<reg (_ r)                   ;; ADD I, Vx (16-bit)
   (zapf index (chop 16 (+ % (register r)))))
 
-(define-opcode op-subn-reg<reg (_ rx ry)                ;; SUBN
-  (multiple-value-bind (result carry)
-      (-_8 (register ry) (register rx)) ; subtraction order is swapped for SUBN
-    (setf (register rx) result
-          flag carry)))
+(define-opcode op-subn-reg<reg (_ rx ry)                ;; SUBN Vx, Vy (8-bit)
+  (setf (values (register rx) flag)
+        ;; subtraction order is swapped for SUBN
+        (-_8 (register ry) (register rx))))
 
 (macro-map                                              ;; SE/SNE
-  ((name test x-arg x-form y-arg y-form)
+  ((NAME            TEST X-ARG  X-FORM        Y-ARG         Y-FORM)
    ((op-se-reg-imm  =    (r 1)  (register r)  (immediate 2) immediate)
     (op-sne-reg-imm not= (r 1)  (register r)  (immediate 2) immediate)
     (op-se-reg-reg  =    (rx 1) (register rx) (ry 1)        (register ry))
@@ -280,13 +266,12 @@
       (incf program-counter 2))))
 
 (macro-map                                              ;; AND/OR/XOR
-    ((name function)
-     ((op-or logior)
-      (op-and logand)
-      (op-xor logxor)))
+  ((NAME   OP)
+   ((op-and logand)
+    (op-or  logior)
+    (op-xor logxor)))
   `(define-opcode ,name (_ destination source _)
-    (zapf (register destination)
-          (,function % (register source)))))
+    (zapf (register destination) (,op % (register source)))))
 
 (define-opcode op-rand (_ r (mask 2))                   ;; RND
   (setf (register r)
@@ -321,14 +306,12 @@
       (decf program-counter 2))))
 
 (define-opcode op-shr (_ r _ _)                         ;; SHR
-  (let ((value (register r)))
-    (setf flag (get-bit 0 value)
-          (register r) (ash value -1))))
+  (setf (values (register r) flag)
+        (>>_8 (register r))))
 
 (define-opcode op-shl (_ r _ _)                         ;; SHL
-  (let ((value (register r)))
-    (setf flag (get-bit 7 value)
-          (register r) (chop 8 (ash value 1)))))
+  (setf (values (register r) flag)
+        (<<_8 (register r))))
 
 (define-opcode op-ld-font<vx (_ r _ _)                  ;; LD F, Vx
   (setf index (font-location (register r))))
@@ -371,6 +354,7 @@
   (make-array +audio-buffer-size+
     :element-type 'single-float
     :initial-element 0.0))
+
 
 (defun fill-buffer (buffer function rate start)
   (iterate
@@ -440,8 +424,6 @@
 (declaim
   (ftype (function (chip) null) run-cpu emulate-cycle)
   (ftype (function (chip int16) null) dispatch-instruction))
-
-(defparameter *c* nil)
 
 
 (defun reset (chip)
@@ -530,6 +512,8 @@
 
 
 ;;;; Main ---------------------------------------------------------------------
+(defparameter *c* nil)
+
 (defun run (rom-filename &key start-paused)
   (let ((chip (make-chip)))
     (setf *c* chip)
@@ -544,6 +528,3 @@
         (bt:make-thread (curry #'run-timers chip))
         (bt:make-thread (curry #'run-sound chip))))))
 
-
-;;;; Scratch ------------------------------------------------------------------
-; (run "roms/blitz.rom")

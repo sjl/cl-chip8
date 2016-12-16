@@ -1,4 +1,4 @@
-(in-package :chip8.debugger)
+(in-package :chip8.gui.debugger)
 (named-readtables:in-readtable :qtools)
 (declaim (optimize (debug 3)))
 

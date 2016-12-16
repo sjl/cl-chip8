@@ -8,10 +8,10 @@
   (:export))
 
 
-(defpackage :chip8.gui
+(defpackage :chip8.gui.screen
   (:use :cl+qt :iterate :losh :cl-arrows
     :chip8.quickutils))
 
-(defpackage :chip8.debugger
+(defpackage :chip8.gui.debugger
   (:use :cl+qt :iterate :losh :cl-arrows
     :chip8.quickutils))

@@ -713,7 +713,7 @@
     (load-rom chip rom-filename)
     (when start-paused
       (debugger-pause (chip-debugger chip)))
-    (chip8.gui::run-gui
+    (chip8.gui.screen::run-gui
       chip
       (lambda ()
         ;; Really it's just the sound that needs to be here...

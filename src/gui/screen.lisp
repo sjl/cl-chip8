@@ -1,4 +1,4 @@
-(in-package :chip8.gui)
+(in-package :chip8.gui.screen)
 (named-readtables:in-readtable :qtools)
 
 
@@ -37,7 +37,7 @@
    (chip :accessor screen-chip :initarg :chip)))
 
 (defun make-screen (chip)
-  (let ((debugger (chip8.debugger::make-debugger chip)))
+  (let ((debugger (chip8.gui.debugger::make-debugger chip)))
     (make-instance 'screen
       :debugger debugger
       :chip chip)))

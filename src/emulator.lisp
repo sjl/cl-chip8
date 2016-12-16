@@ -14,7 +14,7 @@
 
 
 ;;;; Constants ----------------------------------------------------------------
-(defconstant +cycles-per-second+ 1000)
+(defconstant +cycles-per-second+ 300)
 (defconstant +cycles-before-sleep+ 10)
 (defconstant +screen-width+ 64)
 (defconstant +screen-height+ 32)
@@ -26,26 +26,11 @@
 (deftype int8 () '(unsigned-byte 8))
 (deftype int12 () '(unsigned-byte 12))
 (deftype int16 () '(unsigned-byte 16))
-(deftype x-coord () `(integer 0 (,+screen-width+)))
-(deftype y-coord () `(integer 0 (,+screen-height+)))
-
-(deftype basic-array (element-type size)
-  `(simple-array ,(upgraded-array-element-type element-type) (,size)))
-
-(deftype stack (size)
-  `(vector ,(upgraded-array-element-type 'int12) ,size))
 
 
 ;;;; Utils --------------------------------------------------------------------
 (declaim
   (inline not= +_8 -_8 chop cat-bytes get-bit bcd))
-
-(defun make-simple-array (element-type size &rest args)
-  (apply #'make-array size
-         :adjustable nil
-         :fill-pointer nil
-         :element-type element-type
-         args))
 
 (defun not= (x y)
   (not (= x y)))
@@ -94,31 +79,25 @@
 
 (defstruct chip
   (running t :type boolean)
-  (memory (make-simple-array 'int8 4096)
-          :type (basic-array int8 4096)
+  (memory (make-array +memory-size+ :element-type 'int8)
+          :type (simple-array int8 (#.+memory-size+))
           :read-only t)
-  (registers (make-simple-array 'int8 16)
-             :type (basic-array int8 16)
+  (registers (make-array 16 :element-type 'int8)
+             :type (simple-array int8 (16))
              :read-only t)
-  (keys (make-simple-array 'boolean 16)
-        :type (basic-array boolean 16)
-        :read-only t)
-  (video (make-simple-array 'fixnum (* +screen-height+ +screen-width+))
-         :type (basic-array fixnum #.(* +screen-height+ +screen-width+))
-         :read-only t)
-  (video-dirty t :type boolean)
   (index 0 :type int16)
   (program-counter #x200 :type int12)
+  (keys (make-array 16 :element-type 'boolean)
+        :type (simple-array boolean (16))
+        :read-only t)
+  (video (make-array (* +screen-height+ +screen-width+) :element-type 'fixnum)
+         :type (simple-array fixnum (#.(* +screen-height+ +screen-width+)))
+         :read-only t)
+  (video-dirty t :type boolean)
   (delay-timer 0 :type int8)
   (sound-timer 0 :type int8)
-  (random-state (make-random-state t)
-                :type random-state
-                :read-only t)
-  (stack (make-array 16
-           :adjustable nil
-           :fill-pointer 0
-           :element-type 'int12)
-         :type (stack 16)
+  (stack (make-array 16 :element-type 'int12 :fill-pointer 0)
+         :type (vector int12 16)
          :read-only t)
   (loaded-rom nil :type (or null string))
   (debugger (make-debugger) :type debugger :read-only t))
@@ -126,11 +105,9 @@
 
 (define-with-macro chip
   running
-  memory registers
-  flag
-  index program-counter
+  memory
+  registers flag index program-counter
   delay-timer sound-timer
-  random-state
   video video-dirty
   keys
   stack
@@ -356,23 +333,23 @@
 
 (defun draw-sprite (chip start-x start-y size)
   (with-chip (chip)
-    (assert (< (+ index size) +memory-size+) (index)
-      "Sprite data of size ~D starting at #x~4,'0X would be out of bounds"
-      size index)
     (setf flag 0)
     (iterate
       (repeat size)
       (for i :from index)
+      (for y :from start-y)
       (for sprite = (aref memory i))
-      (for y :modulo +screen-height+ :from start-y)
-      (iterate (for x :modulo +screen-width+ :from start-x)
-               (for col :from 7 :downto 0)
-               (for old-pixel = (plusp (vref chip x y)))
-               (for new-pixel = (plusp (get-bit col sprite)))
-               (when (and old-pixel new-pixel)
-                 (setf flag 1))
-               (setf (vref chip x y)
-                     (if (xor old-pixel new-pixel) 255 0))))
+      (iterate
+        (for x :from start-x)
+        (for col :from 7 :downto 0)
+        (when (and (in-range-p 0 x +screen-width+)
+                   (in-range-p 0 y +screen-height+))
+          (for old-pixel = (plusp (vref chip x y)))
+          (for new-pixel = (plusp (get-bit col sprite)))
+          (when (and old-pixel new-pixel)
+            (setf flag 1))
+          (setf (vref chip x y)
+                (if (xor old-pixel new-pixel) 255 0)))))
     (setf video-dirty t))
   nil)
 
@@ -490,7 +467,7 @@
 
 (define-opcode op-rand (_ r (mask 2))                   ;; RND
   (setf (register r)
-        (logand (random 256 random-state) mask)))
+        (logand (random 256) mask)))
 
 (define-opcode op-skp (_ r _ _)                         ;; SKP
   (when (aref keys (register r))
@@ -568,7 +545,9 @@
 
 
 (defun make-audio-buffer ()
-  (make-simple-array 'single-float +audio-buffer-size+ :initial-element 0.0))
+  (make-array +audio-buffer-size+
+    :element-type 'single-float
+    :initial-element 0.0))
 
 (defun fill-buffer (buffer function rate start)
   (iterate
@@ -742,4 +721,6 @@
         (bt:make-thread (curry #'run-timers chip))
         (bt:make-thread (curry #'run-sound chip))))))
 
+
+;;;; Scratch ------------------------------------------------------------------
 ; (run "roms/blitz.rom")

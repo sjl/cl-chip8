@@ -26,7 +26,8 @@
                              (:file "quickutils")))
                (:file "package")
                (:module "src" :serial t
-                :components ((:file "emulator")
+                :components ((:file "debugger")
+                             (:file "emulator")
                              (:module "gui" :serial t
                               :components ((:file "debugger")
                                            (:file "screen")))))))

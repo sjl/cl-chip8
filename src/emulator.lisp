@@ -1,5 +1,5 @@
 (in-package :chip8)
-(declaim (optimize (speed 1) (safety 3) (debug 3)))
+(declaim (optimize (speed 3) (safety 1) (debug 2)))
 
 
 ;;;; Constants ----------------------------------------------------------------
@@ -78,6 +78,7 @@
          :type (simple-array fixnum (#.(* +screen-height+ +screen-width+)))
          :read-only t)
   (video-dirty t :type boolean)
+  (screen-wrapping-enabled t :type boolean)
   (delay-timer 0 :type fixnum)
   (sound-timer 0 :type fixnum)
   (stack (make-array 16 :element-type 'int12 :fill-pointer 0)
@@ -91,7 +92,7 @@
   memory
   registers flag index program-counter
   delay-timer sound-timer
-  video video-dirty
+  video video-dirty screen-wrapping-enabled
   keys
   stack
   loaded-rom
@@ -106,10 +107,6 @@
 
 
 ;;;; Graphics -----------------------------------------------------------------
-(declaim
-  (ftype (function (chip int8 int8 int4) null) draw-sprite))
-
-
 (defun-inline vref (chip x y)
   (aref (chip-video chip) (+ (* +screen-width+ y) x)))
 
@@ -143,33 +140,40 @@
   (+ #x50 (* character 5)))
 
 
+(defun-inline wrap (chip x y)
+  (cond
+    ((chip-screen-wrapping-enabled chip)
+     (values (mod x +screen-width+)
+             (mod y +screen-height+)
+             t))
+    ((and (in-range-p 0 x +screen-width+)
+          (in-range-p 0 y +screen-height+))
+     (values x y t))
+    (t (values nil nil nil))))
+
 (defun draw-sprite (chip start-x start-y size)
   (with-chip (chip)
     (setf flag 0)
-    (iterate
-      (repeat size)
-      (for i :from index)
-      (for y :from start-y)
-      (for sprite = (aref memory i))
-      (iterate
-        (for x :from start-x)
-        (for col :from 7 :downto 0)
-        (when (and (in-range-p 0 x +screen-width+)
-                   (in-range-p 0 y +screen-height+))
-          (for old-pixel = (plusp (vref chip x y)))
-          (for new-pixel = (plusp (get-bit col sprite)))
-          (when (and old-pixel new-pixel)
-            (setf flag 1))
-          (setf (vref chip x y)
-                (if (xor old-pixel new-pixel) 255 0)))))
+    (iterate (repeat size)
+             (for i :from index)
+             (for y :from start-y)
+             (for sprite = (aref memory i))
+             (iterate
+               (for x :from start-x)
+               (for col :from 7 :downto 0)
+               (multiple-value-bind (x y draw) (wrap chip x y)
+                 (when draw
+                   (for old-pixel = (plusp (vref chip x y)))
+                   (for new-pixel = (plusp (get-bit col sprite)))
+                   (when (and old-pixel new-pixel)
+                     (setf flag 1))
+                   (setf (vref chip x y)
+                         (if (xor old-pixel new-pixel) 255 0))))))
     (setf video-dirty t))
   nil)
 
 
 ;;;; Keyboard -----------------------------------------------------------------
-(declaim
-  (ftype (function (chip (integer 0 (16)))) keydown keyup))
-
 (defun keydown (chip key)
   (setf (aref (chip-keys chip) key) t))
 
@@ -177,9 +181,9 @@
   (setf (aref (chip-keys chip) key) nil))
 
 
-;;;; Opcodes ------------------------------------------------------------------
+;;;; Instructions -------------------------------------------------------------
 (eval-when (:compile-toplevel :load-toplevel :execute)
-  (defun parse-opcode-argument-bindings (argument-list)
+  (defun parse-instruction-argument-bindings (argument-list)
     (flet ((normalize-arg (arg)
              (destructuring-bind (symbol &optional (nibbles 1))
                  (ensure-list arg)
@@ -190,19 +194,19 @@
         (when (not (eql symbol '_))
           (collect `(,symbol (ldb (byte ,(* nibbles 4)
                                         ,(* position 4))
-                                  opcode))))))))
+                                  instruction))))))))
 
-(defmacro define-opcode (name argument-list &body body)
+(defmacro define-instruction (name argument-list &body body)
   `(progn
     (declaim (ftype (function (chip int16)
                               (values null &optional))
                     ,name))
-    (defun ,name (chip opcode)
-      (declare (ignorable opcode))
+    (defun ,name (chip instruction)
+      (declare (ignorable instruction))
       (with-chip (chip)
         (macrolet ((register (index)
                      `(aref registers ,index)))
-          (let ,(parse-opcode-argument-bindings argument-list)
+          (let ,(parse-instruction-argument-bindings argument-list)
             ,@body))
         nil))))
 
@@ -215,42 +219,42 @@
       (op-ld-reg<dt  (_ r _ _)       (register r)  delay-timer)
       (op-ld-dt<reg  (_ r _ _)       delay-timer   (register r))
       (op-ld-st<reg  (_ r _ _)       sound-timer   (register r))))
-  `(define-opcode ,name ,arglist
+  `(define-instruction ,name ,arglist
     (setf ,destination ,source)))
 
-(define-opcode op-cls ()                                ;; CLS
+(define-instruction op-cls ()                           ;; CLS
   (fill video 0)
   (setf video-dirty t))
 
-(define-opcode op-jp-imm (_ (target 3))                 ;; JP addr
+(define-instruction op-jp-imm (_ (target 3))            ;; JP addr
   (setf program-counter target))
 
-(define-opcode op-jp-imm+reg (_ (target 3))             ;; JP V0 + addr
+(define-instruction op-jp-imm+reg (_ (target 3))        ;; JP V0 + addr
   (setf program-counter (+ target (register 0))))
 
-(define-opcode op-call (_ (target 3))                   ;; CALL addr
+(define-instruction op-call (_ (target 3))              ;; CALL addr
   (vector-push program-counter stack)
   (setf program-counter target))
 
-(define-opcode op-ret ()                                ;; RET
+(define-instruction op-ret ()                           ;; RET
   (setf program-counter (vector-pop stack)))
 
-(define-opcode op-add-reg<imm (_ r (immediate 2))       ;; ADD Vx, Imm
+(define-instruction op-add-reg<imm (_ r (immediate 2))  ;; ADD Vx, Imm
   ;; For some weird reason the ADD immediate op doesn't set the flag
   (zapf (register r) (+_8 % immediate)))
 
-(define-opcode op-add-reg<reg (_ rx ry)                 ;; ADD Vx, Vy (8-bit)
+(define-instruction op-add-reg<reg (_ rx ry)            ;; ADD Vx, Vy (8-bit)
     (setf (values (register rx) flag)
           (+_8 (register rx) (register ry))))
 
-(define-opcode op-sub-reg<reg (_ rx ry)                 ;; SUB Vx, Vy (8-bit)
+(define-instruction op-sub-reg<reg (_ rx ry)            ;; SUB Vx, Vy (8-bit)
   (setf (values (register rx) flag)
         (-_8 (register rx) (register ry))))
 
-(define-opcode op-add-index<reg (_ r)                   ;; ADD I, Vx (16-bit)
+(define-instruction op-add-index<reg (_ r)              ;; ADD I, Vx (16-bit)
   (zapf index (chop 16 (+ % (register r)))))
 
-(define-opcode op-subn-reg<reg (_ rx ry)                ;; SUBN Vx, Vy (8-bit)
+(define-instruction op-subn-reg<reg (_ rx ry)           ;; SUBN Vx, Vy (8-bit)
   (setf (values (register rx) flag)
         ;; subtraction order is swapped for SUBN
         (-_8 (register ry) (register rx))))
@@ -261,7 +265,7 @@
     (op-sne-reg-imm not= (r 1)  (register r)  (immediate 2) immediate)
     (op-se-reg-reg  =    (rx 1) (register rx) (ry 1)        (register ry))
     (op-sne-reg-reg not= (rx 1) (register rx) (ry 1)        (register ry))))
-  `(define-opcode ,name (_ ,x-arg ,y-arg)
+  `(define-instruction ,name (_ ,x-arg ,y-arg)
     (when (,test ,x-form ,y-form)
       (incf program-counter 2))))
 
@@ -270,28 +274,28 @@
    ((op-and logand)
     (op-or  logior)
     (op-xor logxor)))
-  `(define-opcode ,name (_ destination source _)
+  `(define-instruction ,name (_ destination source _)
     (zapf (register destination) (,op % (register source)))))
 
-(define-opcode op-rand (_ r (mask 2))                   ;; RND
+(define-instruction op-rand (_ r (mask 2))              ;; RND
   (setf (register r)
         (logand (random 256) mask)))
 
-(define-opcode op-skp (_ r _ _)                         ;; SKP
+(define-instruction op-skp (_ r _ _)                    ;; SKP
   (when (aref keys (register r))
     (incf program-counter 2)))
 
-(define-opcode op-sknp (_ r _ _)                        ;; SKNP
+(define-instruction op-sknp (_ r _ _)                   ;; SKNP
   (when (not (aref keys (register r)))
     (incf program-counter 2)))
 
-(define-opcode op-ld-mem<regs (_ n _ _)                 ;; LD [I] < Vn
+(define-instruction op-ld-mem<regs (_ n _ _)            ;; LD [I] < Vn
   (replace memory registers :start1 index :end2 (1+ n)))
 
-(define-opcode op-ld-regs<mem (_ n _ _)                 ;; LD Vn < [I]
+(define-instruction op-ld-regs<mem (_ n _ _)            ;; LD Vn < [I]
   (replace registers memory :end1 (1+ n) :start2 index))
 
-(define-opcode op-ld-reg<key (_ r _ _)                  ;; LD Vx, Key (await)
+(define-instruction op-ld-reg<key (_ r _ _)             ;; LD Vx, Key (await)
   ;; I'm unsure how this instruction is supposed to interact with the timers.
   ;;
   ;; Either the timers should continue to count down while we wait for a key, or
@@ -305,24 +309,24 @@
       ;; If we don't have a key, just execute this instruction again next time.
       (decf program-counter 2))))
 
-(define-opcode op-shr (_ r _ _)                         ;; SHR
+(define-instruction op-shr (_ r _ _)                    ;; SHR
   (setf (values (register r) flag)
         (>>_8 (register r))))
 
-(define-opcode op-shl (_ r _ _)                         ;; SHL
+(define-instruction op-shl (_ r _ _)                    ;; SHL
   (setf (values (register r) flag)
         (<<_8 (register r))))
 
-(define-opcode op-ld-font<vx (_ r _ _)                  ;; LD F, Vx
+(define-instruction op-ld-font<vx (_ r _ _)             ;; LD F, Vx
   (setf index (font-location (register r))))
 
-(define-opcode op-ld-bcd<vx (_ r _ _)                   ;; LD B, Vx
+(define-instruction op-ld-bcd<vx (_ r _ _)              ;; LD B, Vx
   (setf (values (aref memory (+ index 0)) ; hundreds
                 (aref memory (+ index 1)) ; tens
                 (aref memory (+ index 2))) ; ones
         (bcd (register r))))
 
-(define-opcode op-draw (_ rx ry size)                   ;; DRW Vx, Vy, size
+(define-instruction op-draw (_ rx ry size)              ;; DRW Vx, Vy, size
   (draw-sprite chip (register rx) (register ry) size))
 
 
@@ -393,13 +397,11 @@
                    (progn
                      (setf angle (fill-sawtooth buffer rate angle))
                      (portaudio:write-stream audio-stream buffer))
-                   (sleep +audio-buffer-time+)))))))
+                   (sleep +audio-buffer-time+))))))
+  nil)
 
 
 ;;;; Timers -------------------------------------------------------------------
-(declaim
-  (ftype (function (chip) null) decrement-timers run-timers))
-
 (defun decrement-timers (chip)
   (flet ((decrement (i)
            (if (plusp i)
@@ -420,11 +422,6 @@
 
 
 ;;;; CPU ----------------------------------------------------------------------
-(declaim
-  (ftype (function (chip) null) run-cpu emulate-cycle)
-  (ftype (function (chip int16) null) dispatch-instruction))
-
-
 (defun reset (chip)
   (with-chip (chip)
     (fill memory 0)

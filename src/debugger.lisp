@@ -95,11 +95,12 @@
 (defun print-disassembled-instruction (array index)
   (destructuring-bind (address instruction disassembly bits)
       (instruction-information array index)
-    (format t "~3,'0X: ~4,'0X ~24A ~8A~%"
-            address
-            instruction
-            (or disassembly "")
-            bits)))
+    (let ((*print-base* 16))
+      (format t "~3,'0X: ~4,'0X ~24A ~8A~%"
+              address
+              instruction
+              (or disassembly "")
+              bits))))
 
 (defun disassemble-instructions (array start)
   (iterate
@@ -113,7 +114,7 @@
     (sleep 0.001)))
 
 
-;;;; Debugger -----------------------------------------------------------------
+;;;; Debugger API -------------------------------------------------------------
 (defun debugger-pause (debugger)
   (with-debugger (debugger)
     (setf paused t print-needed t)))
@@ -134,15 +135,9 @@
 (defun debugger-print (debugger chip)
   (with-debugger (debugger)
     (when (and paused print-needed)
+      (setf print-needed nil)
       (let ((pc (chip-program-counter chip)))
-        (setf print-needed nil)
-        (destructuring-bind (address instruction disassembly bits)
-            (instruction-information (chip-memory chip) pc)
-          (format t "~3,'0X: ~4,'0X ~24A ~8A~%"
-                  address
-                  instruction
-                  (or disassembly "")
-                  bits))
+        (print-disassembled-instruction (chip-memory chip) pc)
         (mapc (rcurry #'funcall pc) callbacks-arrived))))
   (values))
 
@@ -150,23 +145,20 @@
   (debugger-paused debugger))
 
 (defun debugger-check-breakpoints (debugger address)
-  (let ((result (member address (debugger-breakpoints debugger))))
-    (if result
-      (progn (debugger-pause debugger)
-             t)
-      nil)))
+  (if (member address (debugger-breakpoints debugger))
+    (progn (debugger-pause debugger)
+           t)
+    nil))
 
 (defun debugger-should-wait-p (debugger address)
   (with-debugger (debugger)
-    (if (not paused)
-      ;; If we're not paused, we just need to check for breakpoints
-      (debugger-check-breakpoints debugger address)
-      ;; Otherwise we're paused
-      (if take-step
-        (progn (setf take-step nil ; if we're paused, but are ready to step, go
-                     print-needed t)
-               nil)
-        t)))) ; otherwise we're fully paused -- wait
+    (cond
+      ;; If we're not paused, we just need to check for breakpoints.
+      ((not paused) (debugger-check-breakpoints debugger address))
+      ;; If we're paused, but are ready to step, go.
+      (take-step (setf take-step nil print-needed t) nil)
+      ;; Otherwise we're fully paused -- wait
+      (t t))))
 
 (defun debugger-add-breakpoint (debugger address)
   (pushnew address (debugger-breakpoints debugger)))

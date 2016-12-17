@@ -334,8 +334,12 @@
 (defconstant +pi+ (float pi 1.0))
 (defconstant +tau+ (* 2 +pi+))
 (defconstant +sample-rate+ 44100d0)
-(defconstant +audio-buffer-size+ 512)
-(defconstant +audio-buffer-time+ (* +audio-buffer-size+ (/ +sample-rate+)))
+
+(defconstant +audio-buffer-size+ 512
+  "The number of samples in the audio buffer.")
+
+(defconstant +audio-buffer-time+ (* +audio-buffer-size+ (/ +sample-rate+))
+  "The total time the information in the audio buffer represents, in seconds.")
 
 
 (defun sqr (angle)

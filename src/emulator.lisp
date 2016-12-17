@@ -337,7 +337,8 @@
 (defconstant +audio-buffer-size+ 512)
 (defconstant +audio-buffer-time+ (* +audio-buffer-size+ (/ +sample-rate+)))
 
-(defun square (angle)
+
+(defun sqr (angle)
   (if (< (mod angle +tau+) +pi+)
     1.0
     -1.0))
@@ -367,7 +368,7 @@
     (finally (return (mod angle +tau+)))))
 
 (defun fill-square (buffer rate start)
-  (fill-buffer buffer #'square rate start))
+  (fill-buffer buffer #'sqr rate start))
 
 (defun fill-sine (buffer rate start)
   (fill-buffer buffer #'sin rate start))

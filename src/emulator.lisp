@@ -317,11 +317,10 @@
   (setf index (font-location (register r))))
 
 (define-opcode op-ld-bcd<vx (_ r _ _)                   ;; LD B, Vx
-  (multiple-value-bind (hundreds tens ones)
-      (bcd (register r))
-    (setf (aref memory (+ index 0)) hundreds
-          (aref memory (+ index 1)) tens
-          (aref memory (+ index 2)) ones)))
+  (setf (values (aref memory (+ index 0)) ; hundreds
+                (aref memory (+ index 1)) ; tens
+                (aref memory (+ index 2))) ; ones
+        (bcd (register r))))
 
 (define-opcode op-draw (_ rx ry size)                   ;; DRW Vx, Vy, size
   (draw-sprite chip (register rx) (register ry) size))

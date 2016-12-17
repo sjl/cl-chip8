@@ -1,0 +1,46 @@
+(in-package :chip8)
+
+
+(declaim
+  (ftype (function (chip)) load-font)
+  (ftype (function (chip fixnum fixnum)) wrap)
+  (ftype (function (chip int8 int8 int4) null) draw-sprite)
+  (ftype (function (chip (integer (16)))) keyup keydown)
+  (ftype (function (single-float) single-float) square saw)
+  (ftype (function (chip) null) run-sound)
+  (ftype (function (chip) null) decrement-timers run-timers)
+  (ftype (function (chip) null) run-cpu emulate-cycle)
+  (ftype (function (chip int16) null) dispatch-instruction)
+  (ftype (function (chip)) reset)
+  ; (ftype (function ()))
+  )
+
+(defun draw-sprite (chip start-x start-y size)
+  (declare (type chip chip)
+           (type int8 start-x start-y)
+           (type int4 size))
+  (with-chip (chip)
+    (setf flag 0)
+    (iterate
+      (declare (iterate:declare-variables))
+      (repeat size)
+      (for (the fixnum i) :from index)
+      (for (the fixnum y) :from start-y)
+      (for sprite = (aref memory i))
+      (iterate
+        (declare (iterate:declare-variables))
+        (for (the fixnum x) :from start-x)
+        (for (the fixnum col) :from 7 :downto 0)
+        (multiple-value-bind (x y draw) (wrap chip x y)
+          (when draw
+            (for old-pixel = (plusp (vref chip x y)))
+            (for new-pixel = (plusp (get-bit col sprite)))
+            (when (and old-pixel new-pixel)
+              (setf flag 1))
+            (setf (vref chip x y)
+                  (if (xor old-pixel new-pixel) 255 0))))))
+    (setf video-dirty t))
+  nil)
+
+; (start-profiling)
+; (stop-profiling)

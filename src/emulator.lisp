@@ -1,5 +1,6 @@
 (in-package :chip8)
-(declaim (optimize (speed 3) (safety 1) (debug 2)))
+(declaim (optimize (speed 3) (safety 0) (debug 0)))
+; (declaim (optimize (speed 3) (safety 1) (debug 2)))
 
 
 ;;;; Constants ----------------------------------------------------------------
@@ -48,12 +49,12 @@
   (values (chop 8 (ash v 1))
           (get-bit 7 v)))
 
-(defun-inline bcd (integer)
-  (values (-<> integer (floor <> 100) (mod <> 10))
-          (-<> integer (floor <> 10) (mod <> 10))
-          (-<> integer (floor <> 1) (mod <> 10))))
+(defun-inline digit (position integer &optional (base 10))
+  (-<> integer
+    (floor <> (expt base position))
+    (mod <> base)))
 
-(defmacro macro-map ((lambda-list items) &rest body)
+(defmacro macro-map (lambda-list items &rest body)
   (with-gensyms (macro)
     `(macrolet ((,macro ,(ensure-list lambda-list) ,@body))
       ,@(iterate (for item :in items)
@@ -212,13 +213,13 @@
 
 
 (macro-map                                              ;; LD
-    ((NAME           ARGLIST         DESTINATION   SOURCE)
-     ((op-ld-i<imm   (_ (value 3))   index         value)
-      (op-ld-reg<imm (_ r (value 2)) (register r)  value)
-      (op-ld-reg<reg (_ rx ry _)     (register rx) (register ry))
-      (op-ld-reg<dt  (_ r _ _)       (register r)  delay-timer)
-      (op-ld-dt<reg  (_ r _ _)       delay-timer   (register r))
-      (op-ld-st<reg  (_ r _ _)       sound-timer   (register r))))
+    (NAME           ARGLIST         DESTINATION   SOURCE)
+    ((op-ld-i<imm   (_ (value 3))   index         value)
+     (op-ld-reg<imm (_ r (value 2)) (register r)  value)
+     (op-ld-reg<reg (_ rx ry _)     (register rx) (register ry))
+     (op-ld-reg<dt  (_ r _ _)       (register r)  delay-timer)
+     (op-ld-dt<reg  (_ r _ _)       delay-timer   (register r))
+     (op-ld-st<reg  (_ r _ _)       sound-timer   (register r)))
   `(define-instruction ,name ,arglist
     (setf ,destination ,source)))
 
@@ -230,7 +231,7 @@
   (setf program-counter target))
 
 (define-instruction op-jp-imm+reg (_ (target 3))        ;; JP V0 + addr
-  (setf program-counter (+ target (register 0))))
+  (setf program-counter (chop 12 (+ target (register 0)))))
 
 (define-instruction op-call (_ (target 3))              ;; CALL addr
   (vector-push program-counter stack)
@@ -260,20 +261,20 @@
         (-_8 (register ry) (register rx))))
 
 (macro-map                                              ;; SE/SNE
-  ((NAME            TEST X-ARG  X-FORM        Y-ARG         Y-FORM)
-   ((op-se-reg-imm  =    (r 1)  (register r)  (immediate 2) immediate)
-    (op-sne-reg-imm not= (r 1)  (register r)  (immediate 2) immediate)
-    (op-se-reg-reg  =    (rx 1) (register rx) (ry 1)        (register ry))
-    (op-sne-reg-reg not= (rx 1) (register rx) (ry 1)        (register ry))))
+  (NAME            TEST X-ARG  X-FORM        Y-ARG         Y-FORM)
+  ((op-se-reg-imm  =    (r 1)  (register r)  (immediate 2) immediate)
+   (op-sne-reg-imm not= (r 1)  (register r)  (immediate 2) immediate)
+   (op-se-reg-reg  =    (rx 1) (register rx) (ry 1)        (register ry))
+   (op-sne-reg-reg not= (rx 1) (register rx) (ry 1)        (register ry)))
   `(define-instruction ,name (_ ,x-arg ,y-arg)
     (when (,test ,x-form ,y-form)
       (incf program-counter 2))))
 
 (macro-map                                              ;; AND/OR/XOR
-  ((NAME   OP)
-   ((op-and logand)
-    (op-or  logior)
-    (op-xor logxor)))
+  (NAME   OP)
+  ((op-and logand)
+   (op-or  logior)
+   (op-xor logxor))
   `(define-instruction ,name (_ destination source _)
     (zapf (register destination) (,op % (register source)))))
 
@@ -321,10 +322,10 @@
   (setf index (font-location (register r))))
 
 (define-instruction op-ld-bcd<vx (_ r _ _)              ;; LD B, Vx
-  (setf (values (aref memory (+ index 0)) ; hundreds
-                (aref memory (+ index 1)) ; tens
-                (aref memory (+ index 2))) ; ones
-        (bcd (register r))))
+  (let ((number (register r)))
+    (setf (aref memory (+ index 0)) (digit 2 number)
+          (aref memory (+ index 1)) (digit 1 number)
+          (aref memory (+ index 2)) (digit 0 number))))
 
 (define-instruction op-draw (_ rx ry size)              ;; DRW Vx, Vy, size
   (draw-sprite chip (register rx) (register ry) size))

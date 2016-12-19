@@ -119,22 +119,22 @@
 (defun load-font (chip)
   ;; Thanks http://www.multigesture.net/articles/how-to-write-an-emulator-chip-8-interpreter/
   (replace (chip-memory chip)
-           (vector #xF0 #x90 #x90 #x90 #xF0  ; 0
-                   #x20 #x60 #x20 #x20 #x70  ; 1
-                   #xF0 #x10 #xF0 #x80 #xF0  ; 2
-                   #xF0 #x10 #xF0 #x10 #xF0  ; 3
-                   #x90 #x90 #xF0 #x10 #x10  ; 4
-                   #xF0 #x80 #xF0 #x10 #xF0  ; 5
-                   #xF0 #x80 #xF0 #x90 #xF0  ; 6
-                   #xF0 #x10 #x20 #x40 #x40  ; 7
-                   #xF0 #x90 #xF0 #x90 #xF0  ; 8
-                   #xF0 #x90 #xF0 #x10 #xF0  ; 9
-                   #xF0 #x90 #xF0 #x90 #x90  ; A
-                   #xE0 #x90 #xE0 #x90 #xE0  ; B
-                   #xF0 #x80 #x80 #x80 #xF0  ; C
-                   #xE0 #x90 #x90 #x90 #xE0  ; D
-                   #xF0 #x80 #xF0 #x80 #xF0  ; E
-                   #xF0 #x80 #xF0 #x80 #x80) ; F
+           #(#xF0 #x90 #x90 #x90 #xF0  ; 0
+             #x20 #x60 #x20 #x20 #x70  ; 1
+             #xF0 #x10 #xF0 #x80 #xF0  ; 2
+             #xF0 #x10 #xF0 #x10 #xF0  ; 3
+             #x90 #x90 #xF0 #x10 #x10  ; 4
+             #xF0 #x80 #xF0 #x10 #xF0  ; 5
+             #xF0 #x80 #xF0 #x90 #xF0  ; 6
+             #xF0 #x10 #x20 #x40 #x40  ; 7
+             #xF0 #x90 #xF0 #x90 #xF0  ; 8
+             #xF0 #x90 #xF0 #x10 #xF0  ; 9
+             #xF0 #x90 #xF0 #x90 #x90  ; A
+             #xE0 #x90 #xE0 #x90 #xE0  ; B
+             #xF0 #x80 #x80 #x80 #xF0  ; C
+             #xE0 #x90 #x90 #x90 #xE0  ; D
+             #xF0 #x80 #xF0 #x80 #xF0  ; E
+             #xF0 #x80 #xF0 #x80 #x80) ; F
            :start1 #x50))
 
 (defun-inline font-location (character)

@@ -16,7 +16,7 @@
 
 ;;;; OpenGL -------------------------------------------------------------------
 (defun initialize-texture (size)
-  (let* ((handle (gl:gen-texture)))
+  (let ((handle (gl:gen-texture)))
     (gl:bind-texture :texture-2d handle)
 
     (gl:tex-image-2d :texture-2d 0 :luminance size size 0 :luminance

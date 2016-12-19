@@ -143,26 +143,26 @@
   ;; └─┴─┴─┴─┘             ├─┴─┼─┤ │
   ;;                       │0  │.│ │
   ;;                       └───┴─┴─┘
-  (cond
-    ((= code (q+:qt.key_clear)) #x1)
-    ((= code (q+:qt.key_slash)) #x2)
-    ((= code (q+:qt.key_asterisk)) #x3)
-    ((= code (q+:qt.key_minus)) #xC)
+  (qtenumcase code
+    ((q+:qt.key_clear) #x1)
+    ((q+:qt.key_slash) #x2)
+    ((q+:qt.key_asterisk) #x3)
+    ((q+:qt.key_minus) #xC)
 
-    ((= code (q+:qt.key_7)) #x4)
-    ((= code (q+:qt.key_8)) #x5)
-    ((= code (q+:qt.key_9)) #x6)
-    ((= code (q+:qt.key_plus)) #xD)
+    ((q+:qt.key_7) #x4)
+    ((q+:qt.key_8) #x5)
+    ((q+:qt.key_9) #x6)
+    ((q+:qt.key_plus) #xD)
 
-    ((= code (q+:qt.key_4)) #x7)
-    ((= code (q+:qt.key_5)) #x8)
-    ((= code (q+:qt.key_6)) #x9)
-    ((= code (q+:qt.key_enter)) #xE)
+    ((q+:qt.key_4) #x7)
+    ((q+:qt.key_5) #x8)
+    ((q+:qt.key_6) #x9)
+    ((q+:qt.key_enter) #xE)
 
-    ((= code (q+:qt.key_1)) #xA)
-    ((= code (q+:qt.key_2)) #x0)
-    ((= code (q+:qt.key_3)) #xB)
-    ((= code (q+:qt.key_0)) #xF)))
+    ((q+:qt.key_1) #xA)
+    ((q+:qt.key_2) #x0)
+    ((q+:qt.key_3) #xB)
+    ((q+:qt.key_0) #xF)))
 
 (defun pad-key-for (code)
   ;; Original Chip-8 Pad → Laptop
@@ -176,26 +176,26 @@
   ;; │A│0│B│F│             │Z│X│C│V│
   ;; └─┴─┴─┴─┘             └─┴─┴─┴─┘
   ;;
-  (cond
-    ((= code (q+:qt.key_1)) #x1)
-    ((= code (q+:qt.key_2)) #x2)
-    ((= code (q+:qt.key_3)) #x3)
-    ((= code (q+:qt.key_4)) #xC)
+  (qtenumcase code
+    ((q+:qt.key_1) #x1)
+    ((q+:qt.key_2) #x2)
+    ((q+:qt.key_3) #x3)
+    ((q+:qt.key_4) #xC)
 
-    ((= code (q+:qt.key_q)) #x4)
-    ((= code (q+:qt.key_w)) #x5)
-    ((= code (q+:qt.key_e)) #x6)
-    ((= code (q+:qt.key_r)) #xD)
+    ((q+:qt.key_q) #x4)
+    ((q+:qt.key_w) #x5)
+    ((q+:qt.key_e) #x6)
+    ((q+:qt.key_r) #xD)
 
-    ((= code (q+:qt.key_a)) #x7)
-    ((= code (q+:qt.key_s)) #x8)
-    ((= code (q+:qt.key_d)) #x9)
-    ((= code (q+:qt.key_f)) #xE)
+    ((q+:qt.key_a) #x7)
+    ((q+:qt.key_s) #x8)
+    ((q+:qt.key_d) #x9)
+    ((q+:qt.key_f) #xE)
 
-    ((= code (q+:qt.key_z)) #xA)
-    ((= code (q+:qt.key_x)) #x0)
-    ((= code (q+:qt.key_c)) #xB)
-    ((= code (q+:qt.key_v)) #xF)))
+    ((q+:qt.key_z) #xA)
+    ((q+:qt.key_x) #x0)
+    ((q+:qt.key_c) #xB)
+    ((q+:qt.key_v) #xF)))
 
 
 (define-override (screen key-press-event) (ev)

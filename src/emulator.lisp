@@ -49,11 +49,6 @@
   (values (chop 8 (ash v 1))
           (get-bit 7 v)))
 
-(defun-inline digit (position integer &optional (base 10))
-  (-<> integer
-    (floor <> (expt base position))
-    (mod <> base)))
-
 (defmacro macro-map (lambda-list items &rest body)
   (with-gensyms (macro)
     `(macrolet ((,macro ,(ensure-list lambda-list) ,@body))
@@ -548,6 +543,4 @@
         (bt:make-thread (curry #'run-cpu chip))
         (bt:make-thread (curry #'run-timers chip))
         (bt:make-thread (curry #'run-sound chip))))))
-
-
 

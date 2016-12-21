@@ -332,8 +332,12 @@
 
 
 ;;;; Sound --------------------------------------------------------------------
-(defconstant +pi+ (float pi 1.0))
+(defconstant +pi+ (coerce pi 'single-float))
 (defconstant +tau+ (* 2 +pi+))
+(defconstant +1/4tau+ (* 1/4 tau))
+(defconstant +1/2tau+ (* 1/2 tau))
+(defconstant +3/4tau+ (* 3/4 tau))
+
 (defconstant +sample-rate+ 44100d0)
 
 (defconstant +audio-buffer-size+ 512
@@ -344,19 +348,31 @@
 
 
 (defun sqr (angle)
-  (if (< (mod angle +tau+) +pi+)
+  (if (< (mod angle +tau+) +1/2tau+)
     1.0
     -1.0))
 
 (defun saw (angle)
   (let ((a (mod angle +tau+)))
-    (if (< a +pi+)
-      (map-range 0   +pi+
-                 1.0 -1.0
+    (if (< a +1/2tau+)
+      (map-range 0   +1/2tau+
+                 0.0 1.0
                  a)
-      (map-range +pi+ +tau+
-                 -1.0 1.0
+      (map-range +1/2tau+ +tau+
+                 -1.0     0.0
                  a))))
+
+(defun tri (angle)
+  (let ((a (mod angle +tau+)))
+    (cond ((< a +1/4tau+) (map-range 0   +1/4tau+
+                                     0.0 1.0
+                                     a))
+          ((< a 3/4tau) (map-range +1/4tau+ +3/4tau+
+                                   1.0      -1.0
+                                   a))
+          (t (map-range +3/4tau+ +tau+
+                        -1.0     0.0
+                        a)))))
 
 
 (defun make-audio-buffer ()
@@ -381,9 +397,12 @@
 (defun fill-sawtooth (buffer rate start)
   (fill-buffer buffer #'saw rate start))
 
+(defun fill-triangle (buffer rate start)
+  (fill-buffer buffer #'tri rate start))
+
 
 (defun audio-rate (frequency)
-  (float (* (/ +tau+ +sample-rate+) frequency) 1.0))
+  (coerce (* (/ +tau+ +sample-rate+) frequency) 'single-float))
 
 
 (defun run-sound (chip)
@@ -529,4 +548,6 @@
         (bt:make-thread (curry #'run-cpu chip))
         (bt:make-thread (curry #'run-timers chip))
         (bt:make-thread (curry #'run-sound chip))))))
+
+
 

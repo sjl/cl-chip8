@@ -77,6 +77,7 @@
   (screen-wrapping-enabled t :type boolean)
   (delay-timer 0 :type fixnum)
   (sound-timer 0 :type fixnum)
+  (sound-type :sine :type keyword)
   (stack (make-array 16 :element-type 'int12 :fill-pointer 0)
          :type (vector int12 16)
          :read-only t)
@@ -89,6 +90,7 @@
   registers flag index program-counter
   delay-timer sound-timer
   video video-dirty screen-wrapping-enabled
+  sound-type
   keys
   stack
   loaded-rom
@@ -368,7 +370,6 @@
                  a))))
 
 
-
 (defun make-audio-buffer ()
   (make-array +audio-buffer-size+
     :element-type 'single-float
@@ -395,6 +396,14 @@
   (fill-buffer buffer #'tri rate start))
 
 
+(defun audio-buffer-filler (chip)
+  (ecase (chip-sound-type chip)
+    (:square #'fill-square)
+    (:sine #'fill-sine)
+    (:sawtooth #'fill-sawtooth)
+    (:triangle #'fill-triangle)))
+
+
 (defun audio-rate (frequency)
   (coerce (* (/ +tau+ +sample-rate+) frequency) 'single-float))
 
@@ -414,7 +423,8 @@
                  (if (and (plusp sound-timer)
                           (not (debugger-paused-p debugger)))
                    (progn
-                     (setf angle (fill-sawtooth buffer rate angle))
+                     (setf angle (funcall (audio-buffer-filler chip)
+                                          buffer rate angle))
                      (portaudio:write-stream audio-stream buffer))
                    (sleep +audio-buffer-time+))))))
   nil)

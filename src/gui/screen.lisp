@@ -10,10 +10,6 @@
 (defparameter *fps* 60)
 
 
-;;;; Data ---------------------------------------------------------------------
-(defstruct gui chip screen)
-
-
 ;;;; OpenGL -------------------------------------------------------------------
 (defun initialize-texture (size)
   (let ((handle (gl:gen-texture)))

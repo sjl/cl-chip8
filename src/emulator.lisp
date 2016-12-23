@@ -329,9 +329,9 @@
 ;;;; Sound --------------------------------------------------------------------
 (defconstant +pi+ (coerce pi 'single-float))
 (defconstant +tau+ (* 2 +pi+))
-(defconstant +1/4tau+ (* 1/4 tau))
-(defconstant +1/2tau+ (* 1/2 tau))
-(defconstant +3/4tau+ (* 3/4 tau))
+(defconstant +1/4tau+ (* 1/4 +tau+))
+(defconstant +1/2tau+ (* 1/2 +tau+))
+(defconstant +3/4tau+ (* 3/4 +tau+))
 
 (defconstant +sample-rate+ 44100d0)
 
@@ -359,15 +359,14 @@
 
 (defun tri (angle)
   (let ((a (mod angle +tau+)))
-    (cond ((< a +1/4tau+) (map-range 0   +1/4tau+
-                                     0.0 1.0
-                                     a))
-          ((< a 3/4tau) (map-range +1/4tau+ +3/4tau+
-                                   1.0      -1.0
-                                   a))
-          (t (map-range +3/4tau+ +tau+
-                        -1.0     0.0
-                        a)))))
+    (if (< a +1/2tau+)
+      (map-range 0    +1/2tau+
+                 -1.0 1.0
+                 a)
+      (map-range +1/2tau+ +tau+
+                 1.0      -1.0
+                 a))))
+
 
 
 (defun make-audio-buffer ()

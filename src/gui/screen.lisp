@@ -3,7 +3,7 @@
 
 
 ;;;; Config -------------------------------------------------------------------
-(defparameter *current* nil)
+(defparameter *main-window* nil)
 (defparameter *scale* 8)
 (defparameter *width* (* *scale* 64))
 (defparameter *height* (* *scale* 32))
@@ -26,32 +26,42 @@
     handle))
 
 
+;;;; Main Window --------------------------------------------------------------
+(define-widget main-window (QMainWindow)
+  ((debugger :accessor main-debugger :initarg :debugger)
+   (chip :accessor main-chip :initarg :chip)))
+
+(define-subwidget (main-window screen) (make-instance 'screen)
+  (setf (screen-chip screen) chip))
+
+
+(define-initializer (main-window main-setup)
+  (setf (q+:window-title main-window) "cl-chip8"
+        (q+:central-widget main-window) screen
+        (q+:focus-proxy main-window) screen)
+  (q+:show debugger))
+
+
+(defun die ()
+  (setf (chip8::chip-running (main-chip *main-window*)) nil)
+  (q+:close (main-debugger *main-window*))
+  (q+:close *main-window*))
+
+
 ;;;; Screen -------------------------------------------------------------------
 (define-widget screen (QGLWidget)
   ((texture :accessor screen-texture)
-   (debugger :accessor screen-debugger :initarg :debugger)
    (chip :accessor screen-chip :initarg :chip)))
 
-(defun make-screen (chip)
-  (let ((debugger (chip8.gui.debugger::make-debugger chip)))
-    (make-instance 'screen
-      :debugger debugger
-      :chip chip)))
 
-
-(defun die (screen)
-  (setf (chip8::chip-running (screen-chip screen)) nil)
-  (q+:close (screen-debugger screen))
-  (q+:close screen))
-
-(define-initializer (screen setup)
-  (setf (q+:window-title screen) "cl-chip8"
-        (q+:fixed-size screen) (values *width* *height*))
-  (q+:show debugger))
+(define-initializer (screen screen-setup)
+  (setf (q+:focus-policy screen) (q+:qt.strong-focus)
+        (q+:fixed-size screen) (values *width* *height*)))
 
 (define-override (screen "initializeGL") ()
   (setf (screen-texture screen) (initialize-texture 64))
   (stop-overriding))
+
 
 (define-subwidget (screen timer) (q+:make-qtimer screen)
   (setf (q+:single-shot timer) NIL)
@@ -59,10 +69,9 @@
 
 (define-slot (screen update) ()
   (declare (connected timer (timeout)))
-
-  (if (chip8::chip-running (screen-chip screen))
+  (if (chip8::chip-running chip)
     (q+:repaint screen)
-    (die screen)))
+    (die)))
 
 
 (defun render-screen (screen painter)
@@ -208,7 +217,7 @@
       (chip8::keyup chip pad-key)
       (qtenumcase key
         ((q+:qt.key_escape)
-         (die screen))
+         (die))
 
         ((q+:qt.key_space)
          (-> chip chip8::chip-debugger chip8::debugger-toggle-pause))
@@ -223,10 +232,59 @@
   (stop-overriding))
 
 
+;;;; Menus --------------------------------------------------------------------
+(defun get-rom-path (window)
+  (let ((path (q+:qfiledialog-get-open-file-name
+                window
+                "Load ROM"
+                (uiop:native-namestring (asdf:system-source-directory :cl-chip8))
+                "ROM Files (*.rom)")))
+    (if (string= path "")
+      nil
+      path)))
+
+(defun load-rom (main-window)
+  (when-let* ((rom (get-rom-path main-window)))
+    (chip8::load-rom (main-chip main-window) rom)))
+
+(define-menu (main-window File)
+  (:item ("Load ROM..." (ctrl o))
+   (load-rom main-window))
+  (:item ("Quit" (ctrl q))
+   (die)))
+
+
+(defun set-screen-wrapping (main-window enabled)
+  (setf (-<> main-window main-chip chip8::chip-screen-wrapping-enabled)
+        enabled))
+
+(define-menu (main-window Display)
+  (:menu "Screen Wrapping"
+   (:item "On" (set-screen-wrapping main-window t))
+   (:item "Off" (set-screen-wrapping main-window nil))))
+
+
+(defun set-sound-type (main-window type)
+  (setf (-<> main-window main-chip chip8::chip-sound-type) type))
+
+(define-menu (main-window Sound)
+  (:menu "Sound Type"
+   (:item "Sine" (set-sound-type main-window :sine))
+   (:item "Square" (set-sound-type main-window :square))
+   (:item "Sawtooth" (set-sound-type main-window :sawtooth))
+   (:item "Triangle" (set-sound-type main-window :triangle))))
+
+
 ;;;; Main ---------------------------------------------------------------------
+(defun make-main-window (chip)
+  (make-instance 'main-window
+    :chip chip
+    :debugger (chip8.gui.debugger::make-debugger chip)))
+
+
 (defun run-gui (chip thunk)
   (with-main-window
-    (window (make-screen chip))
+    (window (setf *main-window* (make-main-window chip)))
     (funcall thunk)))
 
 

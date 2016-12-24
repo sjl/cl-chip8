@@ -29,6 +29,7 @@ Then use `(chip8::run "path/to/a/chip8.rom")` to start it up.
 References
 ----------
 
-* http://devernay.free.fr/hacks/chip8/C8TECH10.HTM
-* http://mattmik.com/files/chip8/mastering/chip8.html
-* https://github.com/AfBu/haxe-chip-8-emulator/wiki/(Super)CHIP-8-Secrets
+* <http://devernay.free.fr/hacks/chip8/C8TECH10.HTM>
+* <http://mattmik.com/files/chip8/mastering/chip8.html>
+* <https://github.com/AfBu/haxe-chip-8-emulator/wiki/(Super)CHIP-8-Secrets>
+* <https://github.com/trapexit/chip-8_documentation>

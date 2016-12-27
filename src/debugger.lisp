@@ -102,11 +102,6 @@
               (or disassembly "")
               bits))))
 
-(defun disassemble-instructions (array start)
-  (iterate
-    (for i :from start :below (length array) :by 2)
-    (collect (instruction-information array i) :result-type vector)))
-
 (defun dump-disassembly (array &optional (start 0) (end (length array)))
   (iterate
     (for i :from start :below end :by 2)

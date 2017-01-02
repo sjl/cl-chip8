@@ -519,8 +519,8 @@
 
 (defun emulate-cycle (chip)
   (with-chip (chip)
-    (debugger-print debugger chip)
-    (if (debugger-should-wait-p debugger program-counter)
+    (debugger-arrive debugger chip)
+    (if (debugger-check-wait debugger program-counter)
       (sleep 10/1000)
       (let ((instruction (cat-bytes (aref memory program-counter)
                                     (aref memory (1+ program-counter)))))

@@ -4,12 +4,12 @@
 (defstruct debugger
   (paused nil :type boolean)
   (take-step nil :type boolean)
-  (print-needed nil :type boolean)
+  (awaiting-arrival nil :type boolean)
   (callbacks-arrived nil :type list)
   (breakpoints nil :type list))
 
 (define-with-macro debugger
-  paused take-step print-needed
+  paused take-step awaiting-arrival
   callbacks-arrived)
 
 
@@ -112,11 +112,11 @@
 ;;;; Debugger API -------------------------------------------------------------
 (defun debugger-pause (debugger)
   (with-debugger (debugger)
-    (setf paused t print-needed t)))
+    (setf paused t awaiting-arrival t)))
 
 (defun debugger-unpause (debugger)
   (with-debugger (debugger)
-    (setf paused nil print-needed nil)))
+    (setf paused nil awaiting-arrival nil)))
 
 (defun debugger-toggle-pause (debugger)
   (if (debugger-paused debugger)
@@ -124,34 +124,39 @@
     (debugger-pause debugger)))
 
 (defun debugger-step (debugger)
+  (setf (debugger-take-step debugger) t))
+
+(defun debugger-arrive (debugger chip)
   (with-debugger (debugger)
-    (setf take-step t)))
+    (when awaiting-arrival
+      (setf awaiting-arrival nil)
+      (debugger-print debugger chip)
+      (mapc (rcurry #'funcall (chip-program-counter chip))
+            callbacks-arrived))))
 
 (defun debugger-print (debugger chip)
-  (with-debugger (debugger)
-    (when (and paused print-needed)
-      (setf print-needed nil)
-      (let ((pc (chip-program-counter chip)))
-        (print-disassembled-instruction (chip-memory chip) pc)
-        (mapc (rcurry #'funcall pc) callbacks-arrived))))
-  (values))
+  (declare (ignore debugger))
+  (print-disassembled-instruction (chip-memory chip)
+                                  (chip-program-counter chip)))
 
 (defun debugger-paused-p (debugger)
   (debugger-paused debugger))
 
 (defun debugger-check-breakpoints (debugger address)
+  "Return `t` if the debugger is at a breakpoint, `nil` otherwise."
   (if (member address (debugger-breakpoints debugger))
     (progn (debugger-pause debugger)
            t)
     nil))
 
-(defun debugger-should-wait-p (debugger address)
+(defun debugger-check-wait (debugger address)
+  "Return `t` if the debugger wants execution to wait, `nil` otherwise."
   (with-debugger (debugger)
     (cond
       ;; If we're not paused, we just need to check for breakpoints.
       ((not paused) (debugger-check-breakpoints debugger address))
       ;; If we're paused, but are ready to step, go.
-      (take-step (setf take-step nil print-needed t) nil)
+      (take-step (setf take-step nil awaiting-arrival t) nil)
       ;; Otherwise we're fully paused -- wait
       (t t))))
 

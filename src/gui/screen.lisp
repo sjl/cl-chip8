@@ -212,22 +212,15 @@
 
 (define-override (screen key-release-event) (ev)
   (let* ((key (q+:key ev))
-         (pad-key (pad-key-for key)))
+         (pad-key (pad-key-for key))
+         (debugger (chip8::chip-debugger chip)))
     (if pad-key
       (chip8::keyup chip pad-key)
       (qtenumcase key
-        ((q+:qt.key_escape)
-         (die))
-
-        ((q+:qt.key_space)
-         (-> chip chip8::chip-debugger chip8::debugger-toggle-pause))
-
-        ((q+:qt.key_f1)
-         (-> chip chip8::reset))
-
-        ((q+:qt.key_f7)
-         (-> chip chip8::chip-debugger chip8::debugger-step))
-
+        ((q+:qt.key_escape) (die))
+        ((q+:qt.key_space) (chip8::debugger-toggle-pause debugger))
+        ((q+:qt.key_f1) (chip8::reset chip))
+        ((q+:qt.key_f7) (chip8::debugger-step debugger))
         (t (pr :unknown-key (format nil "~X" key))))))
   (stop-overriding))
 

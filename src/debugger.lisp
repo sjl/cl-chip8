@@ -119,7 +119,7 @@
     (setf paused nil awaiting-arrival nil)))
 
 (defun debugger-toggle-pause (debugger)
-  (if (debugger-paused debugger)
+  (if (debugger-paused-p debugger)
     (debugger-unpause debugger)
     (debugger-pause debugger)))
 

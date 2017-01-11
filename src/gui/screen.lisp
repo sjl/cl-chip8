@@ -231,7 +231,7 @@
                 window
                 "Load ROM"
                 (uiop:native-namestring (asdf:system-source-directory :cl-chip8))
-                "ROM Files (*.rom)")))
+                "ROM Files (*.rom);;All Files (*)")))
     (if (string= path "")
       nil
       path)))
@@ -277,7 +277,7 @@
 
 (defun run-gui (chip thunk)
   (with-main-window
-    (window (setf *main-window* (make-main-window chip)))
+      (window (setf *main-window* (make-main-window chip)))
     (funcall thunk)))
 
 

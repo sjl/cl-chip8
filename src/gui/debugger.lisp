@@ -308,6 +308,7 @@
     (q+:hide hheader)))
 
 
+
 ;;;; Stack Viewer -------------------------------------------------------------
 ;;;; Code
 (defun stack-value (chip index)
@@ -393,9 +394,9 @@
       :model-stack model-stack
       :chip-debugger (chip8::chip-debugger chip))))
 
-(defun run (chip)
-  (with-main-window (window (make-debugger chip))))
+; (defun run (chip)
+;   (with-main-window (window (make-debugger chip))))
 
 
-(defparameter *c* (chip8::make-chip))
-(chip8::load-rom *c* "roms/breakout.rom")
+; (defparameter *c* (chip8::make-chip))
+; (chip8::load-rom *c* "roms/breakout.rom")

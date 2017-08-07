@@ -9,7 +9,6 @@
 
   :depends-on (
                :bordeaux-threads
-               :cl-arrows
                :cl-opengl
                :cl-portaudio
                :iterate

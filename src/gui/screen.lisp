@@ -108,7 +108,7 @@
   (q+:end-native-painting painter))
 
 (defun render-debug (screen painter)
-  (when (-> screen screen-chip chip8::chip-debugger chip8::debugger-paused)
+  (when (-<> screen screen-chip chip8::chip-debugger chip8::debugger-paused)
          (with-finalizing* ((font (q+:make-qfont "Menlo" 20))
                             (border-color (q+:make-qcolor 255 255 255))
                             (fill-color (q+:make-qcolor 0 0 0))
@@ -169,38 +169,38 @@
     ((q+:qt.key_3) #xB)
     ((q+:qt.key_0) #xF)))
 
-(defun pad-key-for (code)
-  ;; Original Chip-8 Pad → Laptop
-  ;; ┌─┬─┬─┬─┐             ┌─┬─┬─┬─┐
-  ;; │1│2│3│C│             │1│2│3│4│
-  ;; ├─┼─┼─┼─┤             ├─┼─┼─┼─┤
-  ;; │4│5│6│D│             │Q│W│E│R│
-  ;; ├─┼─┼─┼─┤             ├─┼─┼─┼─┤
-  ;; │7│8│9│E│             │A│S│D│F│
-  ;; ├─┼─┼─┼─┤             ├─┼─┼─┼─┤
-  ;; │A│0│B│F│             │Z│X│C│V│
-  ;; └─┴─┴─┴─┘             └─┴─┴─┴─┘
-  ;;
-  (qtenumcase code
-    ((q+:qt.key_1) #x1)
-    ((q+:qt.key_2) #x2)
-    ((q+:qt.key_3) #x3)
-    ((q+:qt.key_4) #xC)
+;; (defun pad-key-for (code)
+;;   ;; Original Chip-8 Pad → Laptop
+;;   ;; ┌─┬─┬─┬─┐             ┌─┬─┬─┬─┐
+;;   ;; │1│2│3│C│             │1│2│3│4│
+;;   ;; ├─┼─┼─┼─┤             ├─┼─┼─┼─┤
+;;   ;; │4│5│6│D│             │Q│W│E│R│
+;;   ;; ├─┼─┼─┼─┤             ├─┼─┼─┼─┤
+;;   ;; │7│8│9│E│             │A│S│D│F│
+;;   ;; ├─┼─┼─┼─┤             ├─┼─┼─┼─┤
+;;   ;; │A│0│B│F│             │Z│X│C│V│
+;;   ;; └─┴─┴─┴─┘             └─┴─┴─┴─┘
+;;   ;;
+;;   (qtenumcase code
+;;     ((q+:qt.key_1) #x1)
+;;     ((q+:qt.key_2) #x2)
+;;     ((q+:qt.key_3) #x3)
+;;     ((q+:qt.key_4) #xC)
 
-    ((q+:qt.key_q) #x4)
-    ((q+:qt.key_w) #x5)
-    ((q+:qt.key_e) #x6)
-    ((q+:qt.key_r) #xD)
+;;     ((q+:qt.key_q) #x4)
+;;     ((q+:qt.key_w) #x5)
+;;     ((q+:qt.key_e) #x6)
+;;     ((q+:qt.key_r) #xD)
 
-    ((q+:qt.key_a) #x7)
-    ((q+:qt.key_s) #x8)
-    ((q+:qt.key_d) #x9)
-    ((q+:qt.key_f) #xE)
+;;     ((q+:qt.key_a) #x7)
+;;     ((q+:qt.key_s) #x8)
+;;     ((q+:qt.key_d) #x9)
+;;     ((q+:qt.key_f) #xE)
 
-    ((q+:qt.key_z) #xA)
-    ((q+:qt.key_x) #x0)
-    ((q+:qt.key_c) #xB)
-    ((q+:qt.key_v) #xF)))
+;;     ((q+:qt.key_z) #xA)
+;;     ((q+:qt.key_x) #x0)
+;;     ((q+:qt.key_c) #xB)
+;;     ((q+:qt.key_v) #xF)))
 
 
 (define-override (screen key-press-event) (ev)
@@ -248,7 +248,7 @@
 
 
 (defun set-screen-wrapping (main-window enabled)
-  (setf (-<> main-window main-chip chip8::chip-screen-wrapping-enabled)
+  (setf (chip8::chip-screen-wrapping-enabled (main-chip main-window))
         enabled))
 
 (define-menu (main-window Display)
@@ -258,7 +258,7 @@
 
 
 (defun set-sound-type (main-window type)
-  (setf (-<> main-window main-chip chip8::chip-sound-type) type))
+  (setf (chip8::chip-sound-type (main-chip main-window)) type))
 
 (define-menu (main-window Sound)
   (:menu "Sound Type"
